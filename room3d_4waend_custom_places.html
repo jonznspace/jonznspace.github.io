@@ -1,0 +1,3033 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Propositionssaal – First Person</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #111; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+
+    #overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.82);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #fff; z-index: 10;
+    }
+    #overlay h1 { font-size: 2rem; margin-bottom: 0.5rem; letter-spacing: 2px; }
+    #overlay p  { font-size: 0.95rem; color: #bbb; margin-bottom: 1.5rem; text-align: center; line-height: 1.7; }
+    #startBtn {
+      padding: 0.75rem 2.4rem; font-size: 1.05rem; border: none;
+      border-radius: 8px; background: #c47a2b; color: #fff;
+      cursor: pointer; letter-spacing: 1px;
+      box-shadow: 0 4px 20px rgba(196,122,43,0.5);
+      transition: background 0.2s, transform 0.1s;
+    }
+    #startBtn:hover  { background: #e09040; transform: scale(1.04); }
+    #startBtn:active { transform: scale(0.97); }
+    #startBtn:disabled { background: #555; cursor: not-allowed; transform: none; }
+
+    #loadStatus {
+      font-size: 0.82rem; color: #aaa; margin-top: 1.2rem;
+      min-height: 1.2em; letter-spacing: 1px;
+    }
+    #progressBar {
+      width: 240px; height: 4px; background: #333;
+      border-radius: 2px; margin-top: 0.6rem; overflow: hidden;
+      display: none;
+    }
+    #progressFill {
+      height: 100%; width: 0%; background: #c47a2b;
+      border-radius: 2px; transition: width 0.15s;
+    }
+
+    #crosshair {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      pointer-events: none; display: none;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute; background: rgba(255,255,255,0.8);
+      border-radius: 2px;
+    }
+    #crosshair::before { width: 18px; height: 2px; top: -1px; left: -9px; }
+    #crosshair::after  { width: 2px; height: 18px; top: -9px; left: -1px; }
+
+    #hint {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.92); font-size: 0.78rem; pointer-events: none;
+      display: none; letter-spacing: 1px; white-space: nowrap;
+      background: rgba(0,0,0,0.78); padding: 7px 18px;
+      border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
+      backdrop-filter: blur(8px);
+    }
+
+    /* Zoom-Mode Auswahl im Overlay */
+    .zoom-picker {
+      display: none; /* wird nach dem Laden sichtbar */
+      flex-direction: row; gap: 0.6rem; margin-top: 1.1rem;
+    }
+    .zoom-picker span {
+      font-size: 0.72rem; color: #888; align-self: center;
+      margin-right: 0.2rem; letter-spacing: 0.5px;
+    }
+    .zpick {
+      padding: 0.4rem 1rem; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 16px; background: rgba(255,255,255,0.08); color: #ccc;
+      cursor: pointer; letter-spacing: 0.5px; transition: all 0.18s;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .zpick:hover  { background: rgba(255,255,255,0.15); }
+    .zpick.active { background: #c47a2b; color: #fff;
+                    border-color: #c47a2b; box-shadow: 0 0 10px rgba(196,122,43,0.4); }
+
+    /* Tastenhilfe im Hint */
+    .key {
+      display: inline-block; background: rgba(255,255,255,0.22);
+      border: 1px solid rgba(255,255,255,0.5); border-radius: 4px;
+      padding: 0 6px; font-size: 0.75em; vertical-align: middle;
+      line-height: 1.7; margin: 0 2px; color: #fff; font-weight: 600;
+    }
+
+    /* -- Ansichts-Navigation (Pfeile) --------------- */
+    .viewNav {
+      position: fixed; top: 50%; transform: translateY(-50%);
+      z-index: 7; background: rgba(0,0,0,0.72);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: #fff; font-size: 1.7rem; width: 54px; height: 80px;
+      border-radius: 10px; cursor: pointer; display: none;
+      align-items: center; justify-content: center;
+      backdrop-filter: blur(8px);
+      transition: background 0.18s, border-color 0.18s, transform 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .viewNav:hover  { background: rgba(196,122,43,0.55); border-color: #c47a2b; }
+    .viewNav:active { transform: translateY(-50%) scale(0.94); }
+    #viewNavL { left: 14px; }
+    #viewNavR { right: 14px; }
+    /* Ansichts-Indikator (Punkte) */
+    #viewDots {
+      position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%);
+      display: none; gap: 10px; z-index: 7;
+      background: rgba(80,80,80,0.45);
+      padding: 8px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.18);
+      backdrop-filter: blur(6px);
+    }
+    .vdot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: rgba(255,255,255,0.28); border: 1px solid rgba(255,255,255,0.35);
+      transition: background 0.25s, border-color 0.25s;
+      cursor: pointer;
+    }
+    .vdot.active { background: #c47a2b; border-color: #e09040; }
+
+    /* Wand-Label (aktuelle Ansicht) */
+    #wallLabel {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.88); font-size: 0.8rem; pointer-events: none;
+      display: none; letter-spacing: 2px; white-space: nowrap;
+      background: rgba(0,0,0,0.72); padding: 5px 16px;
+      border-radius: 20px; border: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(8px); text-transform: uppercase;
+      transition: opacity 0.3s;
+    }
+
+    /* Touch-Joystick Hinweis */
+    #touchHint {
+      position: fixed; bottom: 40px; right: 18px;
+      color: rgba(255,255,255,0.35); font-size: 0.7rem;
+      pointer-events: none; display: none; text-align: right; line-height: 1.6;
+    }
+
+    /* -- Freeze-Indikator --------------------------- */
+    #freezeHint {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.7); border: 1px solid rgba(255,220,100,0.35);
+      color: rgba(255,220,100,0.85); font-size: 0.74rem;
+      padding: 5px 14px; border-radius: 20px;
+      pointer-events: none; display: none;
+      letter-spacing: 0.8px; white-space: nowrap;
+      backdrop-filter: blur(6px);
+    }
+
+    /* -- Light Panel ------------------------------- */
+    #lightToggleBtn {
+      position: fixed; top: 16px; right: 16px; z-index: 6;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
+      color: #e0a855; font-size: 1.15rem; width: 40px; height: 40px;
+      border-radius: 8px; cursor: pointer; display: none;
+      align-items: center; justify-content: center;
+      transition: background 0.2s, border-color 0.2s;
+      backdrop-filter: blur(6px);
+    }
+    #lightToggleBtn:hover { background: rgba(196,122,43,0.4); border-color: #c47a2b; }
+    #lightToggleBtn.active { background: rgba(196,122,43,0.55); border-color: #e09040; }
+
+    #posBtn {
+      position: fixed; top: 16px; right: 64px; z-index: 6;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
+      color: #7cf; font-size: 1rem; width: 40px; height: 40px;
+      border-radius: 8px; cursor: pointer; display: none;
+      align-items: center; justify-content: center;
+      transition: background 0.2s, border-color 0.2s;
+      backdrop-filter: blur(6px);
+    }
+    #posBtn:hover { background: rgba(30,130,200,0.4); border-color: #7cf; }
+
+    #wallToggleBtn {
+      position: fixed; top: 16px; right: 160px; z-index: 6;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
+      color: #f8b; font-size: 1rem; width: 40px; height: 40px;
+      border-radius: 8px; cursor: pointer; display: none;
+      align-items: center; justify-content: center;
+      transition: background 0.2s, border-color 0.2s;
+      backdrop-filter: blur(6px);
+    }
+    #wallToggleBtn:hover { background: rgba(200,100,210,0.4); border-color: #f8b; }
+
+    #tourBtn {
+      position: fixed; top: 16px; right: 112px; z-index: 6;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
+      color: #afd; font-size: 1.05rem; width: 40px; height: 40px;
+      border-radius: 8px; cursor: pointer; display: none;
+      align-items: center; justify-content: center;
+      transition: background 0.2s, border-color 0.2s;
+      backdrop-filter: blur(6px);
+    }
+    #tourBtn:hover  { background: rgba(40,160,90,0.4); border-color: #afd; }
+    #tourBtn.active { background: rgba(40,160,90,0.55); border-color: #cfe; box-shadow: 0 0 10px rgba(150,255,150,0.3); }
+
+    #variantBtn {
+      position: fixed; top: 16px; right: 208px; z-index: 6;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
+      color: #ffd89c; font-size: 0.72rem; min-width: 62px; height: 40px;
+      border-radius: 8px; cursor: pointer; display: none;
+      align-items: center; justify-content: center;
+      letter-spacing: 0.8px; font-weight: 700;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+      backdrop-filter: blur(6px);
+    }
+    #variantBtn:hover  { background: rgba(200,140,50,0.35); border-color: #c47a2b; }
+    #variantBtn.active { background: rgba(196,122,43,0.55); border-color: #e09040; color: #fff3dc; }
+
+    #outlineDebugBtn {
+      position: fixed; top: 16px; right: 278px; z-index: 6;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
+      color: #ddd; font-size: 0.68rem; min-width: 66px; height: 40px;
+      border-radius: 8px; cursor: pointer; display: none;
+      align-items: center; justify-content: center;
+      letter-spacing: 0.6px; font-weight: 700;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+      backdrop-filter: blur(6px);
+    }
+    #outlineDebugBtn:hover { background: rgba(120,120,120,0.35); border-color: #bbb; }
+    #outlineDebugBtn.active {
+      background: rgba(90,90,90,0.62);
+      border-color: #ddd;
+      color: #fff;
+    }
+
+    /* -- Highlight-Farbwahl (Test-Buttons) ---------- */
+    #hlColorPicker {
+      position: fixed; top: 16px; right: 352px; z-index: 6;
+      display: none;
+      flex-direction: row; gap: 6px; align-items: center;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 10px; padding: 0 10px; height: 40px;
+      backdrop-filter: blur(6px); overflow: visible;
+    }
+    .hlSwatch {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.25);
+      cursor: pointer; flex-shrink: 0;
+      transition: border-color 0.18s, transform 0.15s, box-shadow 0.18s;
+    }
+    .hlSwatch:hover { border-color: rgba(255,255,255,0.75); transform: scale(1.2); }
+    .hlSwatch.active { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.6); transform: scale(1.2); }
+    .hlAddBtn {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px dashed rgba(255,255,255,0.4);
+      background: rgba(255,255,255,0.08);
+      color: #fff; font-size: 0.92rem; line-height: 1;
+      cursor: pointer; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: border-color 0.18s, transform 0.15s, background 0.18s;
+    }
+    .hlAddBtn:hover {
+      border-color: rgba(255,255,255,0.82);
+      background: rgba(255,255,255,0.18);
+      transform: scale(1.1);
+    }
+    #hlCustomPanel {
+      position: absolute;
+      top: 46px;
+      right: 0;
+      min-width: 200px;
+      display: none;
+      flex-direction: column;
+      gap: 7px;
+      background: rgba(0,0,0,0.86);
+      border: 1px solid rgba(255,255,255,0.22);
+      border-radius: 10px;
+      padding: 9px;
+      backdrop-filter: blur(8px);
+    }
+    #hlCustomPanel.open {
+      display: flex;
+    }
+    #hlCustomPanel label {
+      font-size: 0.68rem;
+      color: #aaa;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+    }
+    #hlCustomColorInput {
+      width: 100%;
+      height: 30px;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 6px;
+      padding: 1px;
+      background: transparent;
+      cursor: pointer;
+    }
+    #hlHexInput {
+      width: 100%;
+      height: 30px;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 6px;
+      padding: 0 8px;
+      background: rgba(255,255,255,0.06);
+      color: #f1f1f1;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      outline: none;
+    }
+    #hlHexInput.invalid {
+      border-color: rgba(255,120,120,0.75);
+      box-shadow: 0 0 6px rgba(255,100,100,0.2);
+    }
+    .hlAddConfirmBtn {
+      width: 100%;
+      height: 30px;
+      border-radius: 7px;
+      border: 1px solid rgba(130,230,170,0.6);
+      background: rgba(130,230,170,0.14);
+      color: #d8ffe8;
+      font-size: 0.76rem;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.18s, background 0.18s, opacity 0.18s;
+      opacity: 0.5;
+    }
+    .hlAddConfirmBtn.ready {
+      opacity: 1;
+      box-shadow: 0 0 8px rgba(130,230,170,0.2);
+    }
+    .hlAddConfirmBtn:hover {
+      border-color: rgba(160,255,200,0.95);
+      background: rgba(130,230,170,0.26);
+    }
+    .hlAddConfirmBtn:disabled {
+      cursor: default;
+      box-shadow: none;
+    }
+    #hlSVCanvas {
+      width: 100%; height: 120px;
+      border-radius: 5px; cursor: crosshair; display: block;
+    }
+    #hlHueCanvas {
+      width: 100%; height: 14px;
+      border-radius: 3px; cursor: crosshair; display: block; margin-top: 3px;
+    }
+
+    #tourProgress {
+      position: fixed; top: 62px; left: 50%; transform: translateX(-50%);
+      color: rgba(180,255,180,0.9); font-size: 0.72rem; pointer-events: none;
+      display: none; letter-spacing: 1.5px; white-space: nowrap;
+      background: rgba(0,0,0,0.72); padding: 4px 14px;
+      border-radius: 20px; border: 1px solid rgba(150,255,150,0.2);
+      backdrop-filter: blur(8px);
+    }
+
+    #variantStatus {
+      position: fixed; top: 62px; right: 16px; z-index: 6;
+      color: rgba(255,230,185,0.95); font-size: 0.68rem; pointer-events: none;
+      display: none; letter-spacing: 1.1px; white-space: nowrap;
+      background: rgba(0,0,0,0.72); padding: 4px 10px;
+      border-radius: 14px; border: 1px solid rgba(220,170,90,0.24);
+      backdrop-filter: blur(8px);
+    }
+
+    #lightPanelContainer {
+      position: fixed;
+      top: 64px;
+      right: 16px;
+      z-index: 6;
+    }
+
+    #lightPanel {
+      width: 230px;
+      background: rgba(8,7,4,0.92);
+      border: 1px solid rgba(255,255,255,0.11);
+      border-radius: 10px; padding: 12px 14px 14px;
+      color: #bbb; font-size: 0.79rem;
+      display: none; flex-direction: column; gap: 6px;
+      backdrop-filter: blur(10px);
+      max-height: calc(100vh - 90px);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #444 transparent;
+    }
+    #lightPanel .pTitle {
+      font-size: 0.86rem; font-weight: 700;
+      color: #e0a855; letter-spacing: 0.5px; margin-bottom: 2px;
+    }
+    #lightPanel .pSec {
+      font-size: 0.68rem; text-transform: uppercase;
+      letter-spacing: 1.2px; color: #666; margin-top: 6px;
+    }
+    #lightPanel hr {
+      border: none; border-top: 1px solid rgba(255,255,255,0.09); margin: 2px 0;
+    }
+    #lightPanel label {
+      display: flex; justify-content: space-between;
+      align-items: center; color: #999;
+    }
+    #lightPanel label.row { gap: 8px; }
+    #lightPanel input[type=range] {
+      width: 100%; accent-color: #c47a2b;
+      cursor: pointer; margin-top: 1px;
+    }
+    #lightPanel input[type=color] {
+      width: 100%; height: 26px; border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px; cursor: pointer; background: transparent; padding: 1px;
+    }
+    #lightPanel select {
+      width: 100%; background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.13);
+      color: #ccc; border-radius: 4px; padding: 3px 6px;
+      font-size: 0.77rem; cursor: pointer;
+    }
+    #lightPanel .valBadge {
+      font-size: 0.72rem; color: #c47a2b; min-width: 30px; text-align: right;
+    }
+    #envMapStatus { font-size: 0.69rem; color: #555; font-style: italic; }
+
+    /* -- Click-Info Overlay --------------------- */
+    #clickInfo {
+      position: fixed; inset: 0; z-index: 9;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(3px);
+    }
+    #clickInfoBox {
+      background: rgba(10,8,5,0.97);
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 12px; padding: 20px 22px 18px;
+      color: #ccc; max-width: 400px; width: 92%;
+      position: relative; box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+    }
+    #clickInfoBox h3 {
+      font-size: 0.82rem; text-transform: uppercase;
+      letter-spacing: 1.4px; color: #e0a855; margin-bottom: 12px;
+    }
+    #clickInfoBox .infoRow {
+      display: flex; gap: 8px; align-items: baseline;
+      margin-bottom: 5px; font-size: 0.8rem;
+    }
+    #clickInfoBox .infoKey {
+      color: #555; font-size: 0.7rem; text-transform: uppercase;
+      letter-spacing: 0.8px; min-width: 90px; flex-shrink: 0;
+    }
+    #clickInfoBox .infoVal {
+      color: #ddd; word-break: break-all;
+    }
+    #clickInfoBox .infoVal.accent { color: #c47a2b; }
+    #clickInfoBox .matList {
+      margin-top: 6px; display: flex; flex-direction: column; gap: 3px;
+    }
+    #clickInfoBox .matChip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 5px; padding: 3px 8px; font-size: 0.75rem; color: #bbb;
+    }
+    #clickInfoBox .matChip.hit {
+      border-color: #c47a2b; background: rgba(196,122,43,0.18); color: #e0a855;
+    }
+    #clickInfoBox .matIdx {
+      font-size: 0.65rem; color: #666; min-width: 18px;
+    }
+    #clickInfoClose {
+      position: absolute; top: 10px; right: 12px;
+      background: none; border: none; color: #555;
+      font-size: 1rem; cursor: pointer; line-height: 1;
+      transition: color 0.15s;
+    }
+    #clickInfoClose:hover { color: #fff; }
+    #clickInfoContinue {
+      margin-top: 14px; width: 100%;
+      padding: 7px; background: #c47a2b; border: none;
+      border-radius: 7px; color: #fff; font-size: 0.82rem;
+      cursor: pointer; letter-spacing: 0.5px;
+      transition: background 0.15s;
+    }
+    #clickInfoContinue:hover { background: #e09040; }
+  </style>
+</head>
+<body>
+
+<div id="overlay">
+  <h1>Propositionssaal</h1>
+  <p id="overlayDesc">Das 3D-Modell wird geladen …<br>
+     Maus zum Umschauen &nbsp;|&nbsp; ESC zum Verlassen</p>
+  <button id="startBtn" disabled>Lade Modell …</button>
+
+  <!-- Zoom-Modus Auswahl – erscheint nach dem Laden -->
+  <div class="zoom-picker" id="zoomPicker">
+    <span>Scroll-Zoom:</span>
+    <button class="zpick active" id="zpickMove" onclick="setZoomMode('move')">Bewegen</button>
+    <button class="zpick"        id="zpickFov"  onclick="setZoomMode('fov')">Fernglas</button>
+  </div>
+
+  <div id="loadStatus">Initialisiere …</div>
+  <div id="progressBar"><div id="progressFill"></div></div>
+</div>
+
+<div id="crosshair"></div>
+<div id="hint"><span class="key">?</span><span class="key">?</span> Ansicht wechseln &nbsp;|&nbsp; Scrollen/Pinch = Fernglas-Zoom &nbsp;|&nbsp; <span class="key">F</span> = Einfrieren &nbsp;|&nbsp; <span class="key">L</span> = Licht &nbsp;|&nbsp; <span class="key">W</span> = Wand wechseln &nbsp;|&nbsp; <span class="key">V</span> = Highlight-Modus &nbsp;|&nbsp; ESC = Menü</div>
+
+<!-- Ansichts-Navigation -->
+<button class="viewNav" id="viewNavL" title="Vorherige Ansicht">&#8592;</button>
+<button class="viewNav" id="viewNavR" title="Nächste Ansicht">&#8594;</button>
+<div id="viewDots" style="display:none;flex-direction:row;"></div>
+<div id="touchHint">1 Finger: Drehen<br>2 Finger: Zoom</div>
+
+<div id="wallLabel"></div>
+
+<div id="freezeHint">• EINGEFROREN – Klick ins Bild oder <kbd style="background:rgba(255,255,255,0.15);padding:0 4px;border-radius:3px">F</kbd> zum Weiterschauen</div>
+
+<!-- Click-Info Overlay -->
+<div id="clickInfo">
+  <div id="clickInfoBox">
+    <button id="clickInfoClose" title="Schließen">✕</button>
+    <h3>Objekt-Info</h3>
+    <div id="clickInfoRows"></div>
+    <button id="clickInfoContinue">Weiter schauen</button>
+  </div>
+</div>
+
+<!-- Light-Panel Button -->
+<button id="lightToggleBtn" title="Licht-Einstellungen  (Taste L)">💡</button>
+<button id="wallToggleBtn" title="Textwand wechseln (text_on_wall / text_on_wall_filled)">🪟</button>
+<button id="posBtn" title="Position &amp; Blickrichtung in Konsole (Taste G)">&#128205;</button>
+<button id="tourBtn" title="Kamerafahrt starten (alle 4 Positionen)">&#127909;</button>
+<button id="variantBtn" title="Highlight-Varianten durchschalten (Taste V)">HL 1/3</button>
+<button id="outlineDebugBtn" title="Debug: Schwarze Outlines ein/aus">OUT DBG</button>
+<div id="hlColorPicker" title="Highlight-Farbe testen">
+  <!-- alt: #C8A96A --> <span class="hlSwatch" data-color="#E8D0A8" style="background:#E8D0A8" title="Gold (hell) #E8D0A8"></span>
+  <!-- alt: #93b3be --> <span class="hlSwatch" data-color="#C2D6DE" style="background:#C2D6DE" title="Teal (hell) #C2D6DE"></span>
+  <!-- alt: #B88A3B --> <span class="hlSwatch" data-color="#D9B270" style="background:#D9B270" title="Amber (hell) #D9B270"></span>
+  <button id="hlAddBtn" class="hlAddBtn" type="button" title="Eigene Highlight-Farbe hinzufügen">+</button>
+  <div id="hlCustomPanel">
+    <label>Farbe wählen</label>
+    <canvas id="hlSVCanvas" width="182" height="120"></canvas>
+    <canvas id="hlHueCanvas" width="182" height="14"></canvas>
+    <input type="color" id="hlCustomColorInput" value="#FAA18F" aria-label="Eigene Highlight-Farbe wählen" style="display:none">
+    <label for="hlHexInput">Hex-Wert</label>
+    <input type="text" id="hlHexInput" value="#FAA18F" maxlength="7" placeholder="#RRGGBB" aria-label="Hex-Wert eingeben">
+    <button id="hlAddConfirmBtn" class="hlAddConfirmBtn" type="button" title="Gewählte Farbe als Swatch hinzufügen" disabled>Farbe hinzufügen</button>
+  </div>
+</div>
+<div id="tourProgress"></div>
+<div id="variantStatus"></div>
+
+<div id="lightPanelContainer">
+  <div id="lightPanel">
+    <div class="pTitle">💡 Licht &amp; Rendering</div>
+
+    <div class="pSec">Ambient</div>
+    <label>Intensität <span class="valBadge" id="ambVal">1.8</span></label>
+    <input type="range" id="ambIntensity" min="0" max="5" step="0.05" value="1.8">
+    <label>Farbe</label>
+    <input type="color" id="ambColor" value="#fff5e0">
+
+    <hr>
+    <div class="pSec">Direktlicht</div>
+    <label>Intensität <span class="valBadge" id="dirVal">1.2</span></label>
+    <input type="range" id="dirIntensity" min="0" max="5" step="0.05" value="1.2">
+    <label>Farbe</label>
+    <input type="color" id="dirColor" value="#ffeedd">
+
+    <hr>
+    <div class="pSec">Hemisphäre</div>
+    <label>Intensität <span class="valBadge" id="hemiVal">0.8</span></label>
+    <input type="range" id="hemiIntensity" min="0" max="3" step="0.05" value="0.8">
+    <label>Himmelfarbe</label>
+    <input type="color" id="hemiSkyColor" value="#fff0cc">
+    <label>Bodenfarbe</label>
+    <input type="color" id="hemiGndColor" value="#443322">
+
+    <hr>
+    <div class="pSec">Renderer</div>
+    <label>Tone Mapping</label>
+    <select id="toneMapping">
+      <option value="0">Kein (Linear)</option>
+      <option value="1" selected>Linear</option>
+      <option value="2">Reinhard</option>
+      <option value="3">Cineon</option>
+      <option value="4">ACES Filmic</option>
+    </select>
+    <label>Belichtung <span class="valBadge" id="expVal">1.0</span></label>
+    <input type="range" id="exposure" min="0.1" max="3" step="0.05" value="1.0">
+
+    <hr>
+    <div class="pSec">Environment Map</div>
+    <label class="row">Aktivieren
+      <input type="checkbox" id="envMapToggle" style="width:auto;accent-color:#c47a2b;cursor:pointer">
+    </label>
+    <label>Intensität <span class="valBadge" id="envIntVal">1.0</span></label>
+    <input type="range" id="envIntensity" min="0" max="3" step="0.05" value="1.0" disabled>
+    <div id="envMapStatus">aus / an</div>
+
+    <hr>
+    <div class="pSec">Kanten (Edges)</div>
+    <label class="row">Anzeigen
+      <input type="checkbox" id="edgeToggle" style="width:auto;accent-color:#c47a2b;cursor:pointer">
+    </label>
+    <label>Farbe</label>
+    <input type="color" id="edgeColor" value="#ffffff">
+    <label>Deckkraft <span class="valBadge" id="edgeOpacityVal">0.4</span></label>
+    <input type="range" id="edgeOpacity" min="0.05" max="1" step="0.05" value="0.4">
+    <label>Winkel-Schwelle <span class="valBadge" id="edgeAngleVal">25°</span></label>
+    <input type="range" id="edgeAngle" min="1" max="89" step="1" value="25">
+    <div style="font-size:0.68rem;color:#555;line-height:1.4;margin-top:2px;">
+      Kleiner = mehr Kanten &middot; Größer = nur markante
+    </div>
+
+    <hr>
+    <div class="pSec">Materialfarbe testen</div>
+    <div style="font-size:0.68rem;color:#555;line-height:1.5;margin-bottom:4px;">
+      Ausgewählte Materialien temporär umfärben
+    </div>
+    <label>Testfarbe</label>
+    <input type="color" id="matTestColor" value="#ffffff">
+    <button id="matTestBtn"
+      style="margin-top:4px;padding:6px;background:rgba(255,255,255,0.08);
+             border:1px solid rgba(255,255,255,0.18);border-radius:6px;
+             color:#ccc;font-size:0.78rem;cursor:pointer;transition:all 0.18s;">
+      Umfärben
+    </button>
+    <div id="matTestStatus" style="font-size:0.69rem;color:#555;font-style:italic;">aus</div>
+
+    <hr>
+    <div class="pSec">Unlit-Modus</div>
+    <div style="font-size:0.68rem;color:#555;line-height:1.5;margin-bottom:4px;">
+      Kein Lichteinfluss, keine Schatten auf dem Objekt (MeshBasicMaterial)
+    </div>
+    <button id="matTestEmissionBtn"
+      style="margin-top:4px;padding:6px;background:rgba(255,255,255,0.08);
+             border:1px solid rgba(255,255,255,0.18);border-radius:6px;
+             color:#ccc;font-size:0.78rem;cursor:pointer;transition:all 0.18s;">
+      ? Aktivieren
+    </button>
+    <div id="matTestEmissionStatus" style="font-size:0.69rem;color:#555;font-style:italic;">aus</div>
+
+  
+  <hr>
+  <div class="pSec">Hintergrundfarbe</div>
+  <label>Farbe</label>
+  <input type="color" id="bgColorPicker" value="#ffffff">
+
+  <hr>
+  <div class="pSec">Outlines</div>
+  <label>Farbe</label>
+  <input type="color" id="outlineColor" value="#000000">
+  <label>Deckkraft <span class="valBadge" id="outlineOpacityVal">1.0</span></label>
+  <input type="range" id="outlineOpacity" min="0" max="1" step="0.02" value="1.0">
+
+  <hr>
+  <div class="pSec">Kamera / Optik</div>
+  <label>Sichtfeld (FOV) <span class="valBadge" id="fovVal">60°</span></label>
+  <input type="range" id="fovSlider" min="20" max="100" step="1" value="60">
+  <div style="font-size:0.68rem;color:#555;line-height:1.4;margin-top:2px;">
+    Kleiner = Teleobjektiv &middot; Größer = Weitwinkel / Fischauge
+  </div>
+  <button id="fovResetBtn"
+    style="margin-top:6px;padding:6px;background:rgba(255,255,255,0.08);
+           border:1px solid rgba(255,255,255,0.18);border-radius:6px;
+           color:#ccc;font-size:0.78rem;cursor:pointer;transition:all 0.18s;">
+    Zurücksetzen (60°)
+  </button>
+</div>
+
+<script src="js/three.min.js"></script>
+<script src="js/GLTFLoader.js"></script>
+<script src="js/EXRLoader.js"></script>
+
+<script>
+// ---------------------------------------------
+//  SCENE SETUP
+// ---------------------------------------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+
+// Hintergrundfarbe – vom Nutzer wählbar (wird ignoriert solange EnvMap aktiv)
+let userBgColor = new THREE.Color(0xffffff);
+const bgColorPicker = document.getElementById('bgColorPicker');
+bgColorPicker.addEventListener('input', () => {
+  userBgColor.set(bgColorPicker.value);
+  // Nur setzen wenn EnvMap gerade nicht als Hintergrund aktiv
+  if (!(envToggle && envToggle.checked)) {
+    scene.background = userBgColor.clone();
+  }
+});
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.LinearEncoding;
+renderer.physicallyCorrectLights = true;
+renderer.toneMapping = THREE.LinearToneMapping;
+renderer.toneMappingExposure = 1.35;
+document.body.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 500);
+
+// ---------------------------------------------
+//  LIGHTING  (cinematic)
+// ---------------------------------------------
+
+// Lichter vorhanden, aber alle auf Intensität 0 – Modell startet im Unlit-Modus
+// (MeshBasicMaterial beim Laden ignoriert sie ohnehin komplett)
+const ambient = new THREE.AmbientLight(0x9aaabb, 0);
+scene.add(ambient);
+
+const dirLight = new THREE.DirectionalLight(0xffe8b0, 0);
+dirLight.position.set(6, 10, 4);
+dirLight.castShadow = false;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.1;
+dirLight.shadow.camera.far  = 300;
+dirLight.shadow.bias = -0.0003;
+dirLight.shadow.normalBias = 0.02;
+scene.add(dirLight);
+
+const fillLight = new THREE.HemisphereLight(0xffd08a, 0x1a1c2e, 0);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0x9bb8d4, 0);
+rimLight.position.set(-8, 5, -6);
+scene.add(rimLight);
+
+// ---------------------------------------------
+//  FREEZE-MODUS  (Taste F – Maus einfrieren ohne Overlay)
+// ---------------------------------------------
+let frozen = false;
+const freezeHint = document.getElementById('freezeHint');
+
+function setFrozen(state) {
+  frozen = state;
+  freezeHint.style.display = state ? 'block' : 'none';
+}
+
+// Canvas-Klick: Info-Overlay immer anzeigen (kein F mehr n�tig)
+let wasDrag = false;
+
+renderer.domElement.addEventListener('click', (e) => {
+  // Drag-Schutz: kein Overlay wenn gerade gewischt wurde
+  if (wasDrag) { wasDrag = false; return; }
+  // Nur wenn der Raum aktiv ist (Overlay ausgeblendet) und keine UI getroffen
+  if (document.getElementById('overlay').style.display !== 'none') return;
+  if (clickInfoEl.style.display === 'flex') return;
+  const ndc = new THREE.Vector2(
+    (e.clientX / window.innerWidth)  * 2 - 1,
+   -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  showClickInfo(ndc);
+  registerInteraction();
+});
+
+let outlineModelRef = null;
+let showBlackOutlineModel = true;
+const blackOutlineMaterials = [];
+const redOutlineMaterials = [];
+
+// ---------------------------------------------
+//  LIGHT PANEL CONTROLS
+// ---------------------------------------------
+const lightToggleBtn = document.getElementById('lightToggleBtn');
+const lightPanel     = document.getElementById('lightPanel');
+const outlineDebugBtn = document.getElementById('outlineDebugBtn');
+
+function syncOutlineDebugState() {
+  if (!outlineDebugBtn) return;
+  outlineDebugBtn.classList.toggle('active', !showBlackOutlineModel);
+  outlineDebugBtn.textContent = showBlackOutlineModel ? 'OUT ON' : 'OUT OFF';
+  outlineDebugBtn.title = showBlackOutlineModel
+    ? 'Debug: Schwarze Outlines ausblenden'
+    : 'Debug: Schwarze Outlines einblenden';
+}
+
+function applyBlackOutlineVisibility() {
+  const opInput = document.getElementById('outlineOpacity');
+  const baseOpacity = opInput ? parseFloat(opInput.value) : 1.0;
+
+  blackOutlineMaterials.forEach((m) => {
+    if (!m) return;
+    m.opacity = showBlackOutlineModel ? baseOpacity : 0.0;
+    m.transparent = m.opacity < 1;
+    m.needsUpdate = true;
+  });
+
+  redOutlineMaterials.forEach((m) => {
+    if (!m) return;
+    m.opacity = Math.min(1, baseOpacity);
+    m.transparent = m.opacity < 1;
+    m.needsUpdate = true;
+  });
+
+  syncOutlineDebugState();
+}
+
+lightToggleBtn.addEventListener('click', () => {
+  const open = lightPanel.style.display === 'flex';
+  lightPanel.style.display  = open ? 'none' : 'flex';
+  lightToggleBtn.classList.toggle('active', !open);
+});
+
+const wallToggleBtn = document.getElementById('wallToggleBtn');
+if (wallToggleBtn) {
+  wallToggleBtn.addEventListener('click', () => {
+    toggleWallModel();
+  });
+}
+
+if (outlineDebugBtn) {
+  syncOutlineDebugState();
+  outlineDebugBtn.addEventListener('click', () => {
+    showBlackOutlineModel = !showBlackOutlineModel;
+    applyBlackOutlineVisibility();
+  });
+}
+
+// Ambient
+const sliderAmb = document.getElementById('ambIntensity');
+const valAmb    = document.getElementById('ambVal');
+sliderAmb.addEventListener('input', () => {
+  ambient.intensity = parseFloat(sliderAmb.value);
+  valAmb.textContent = sliderAmb.value;
+});
+document.getElementById('ambColor').addEventListener('input', (e) => {
+  ambient.color.set(e.target.value);
+});
+
+// Directional
+const sliderDir = document.getElementById('dirIntensity');
+const valDir    = document.getElementById('dirVal');
+sliderDir.addEventListener('input', () => {
+  dirLight.intensity = parseFloat(sliderDir.value);
+  valDir.textContent = sliderDir.value;
+});
+document.getElementById('dirColor').addEventListener('input', (e) => {
+  dirLight.color.set(e.target.value);
+});
+
+// Hemisphere
+const sliderHemi = document.getElementById('hemiIntensity');
+const valHemi    = document.getElementById('hemiVal');
+sliderHemi.addEventListener('input', () => {
+  fillLight.intensity = parseFloat(sliderHemi.value);
+  valHemi.textContent = sliderHemi.value;
+});
+document.getElementById('hemiSkyColor').addEventListener('input', (e) => {
+  fillLight.color.set(e.target.value);
+});
+document.getElementById('hemiGndColor').addEventListener('input', (e) => {
+  fillLight.groundColor.set(e.target.value);
+});
+
+// Tone Mapping
+document.getElementById('toneMapping').addEventListener('change', (e) => {
+  renderer.toneMapping = parseInt(e.target.value);
+  scene.traverse((node) => {
+    if (node.isMesh && node.material) {
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      mats.forEach(m => { m.needsUpdate = true; });
+    }
+  });
+});
+
+// Exposure
+const sliderExp = document.getElementById('exposure');
+const valExp    = document.getElementById('expVal');
+sliderExp.addEventListener('input', () => {
+  renderer.toneMappingExposure = parseFloat(sliderExp.value);
+  valExp.textContent = sliderExp.value;
+});
+
+// -- Environment Map --------------------------
+let envMapTexture = null;
+const envToggle    = document.getElementById('envMapToggle');
+const envIntSlider = document.getElementById('envIntensity');
+const envIntVal    = document.getElementById('envIntVal');
+const envStatus    = document.getElementById('envMapStatus');
+
+// -- EXR automatisch beim Start laden --------
+(function autoLoadEnvMap() {
+  envStatus.textContent = 'Lade EnvMap …';
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  const exrLoader = new THREE.EXRLoader();
+  exrLoader.setDataType(THREE.FloatType);
+  exrLoader.load(
+    'dresden.exr',
+    (tex) => {
+      tex.mapping    = THREE.EquirectangularReflectionMapping;
+      envMapTexture  = pmrem.fromEquirectangular(tex).texture;
+      tex.dispose();
+      pmrem.dispose();
+      // EnvMap geladen, aber beim Start ausgeblendet
+      scene.environment = null;
+      scene.background  = userBgColor.clone();
+      envToggle.checked = false;
+      envIntSlider.disabled = true;
+      envStatus.textContent = 'EnvMap bereit (aus)';
+    },
+    undefined,
+    (err) => {
+      console.warn('Auto-EnvMap Ladefehler:', err);
+      envStatus.textContent = '? EnvMap nicht geladen';
+    }
+  );
+})();
+
+envToggle.addEventListener('change', function () {
+  const self = this;
+  if (this.checked) {
+    if (!envMapTexture) {
+      envStatus.textContent = 'Lade EnvMap …';
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      pmrem.compileEquirectangularShader();
+      const exrLoader = new THREE.EXRLoader();
+      exrLoader.setDataType( THREE.FloatType );  // voller HDR-Wertebereich, keine Clipping-Warnung
+      exrLoader.load(
+        'lilienstein_4k.exr',
+        (tex) => {
+          tex.mapping = THREE.EquirectangularReflectionMapping;
+          envMapTexture = pmrem.fromEquirectangular(tex).texture;
+          tex.dispose();
+          pmrem.dispose();
+          scene.environment = envMapTexture;
+          scene.background  = envMapTexture;
+          envIntSlider.disabled = false;
+          updateEnvIntensity(parseFloat(envIntSlider.value));
+          envStatus.textContent = 'EnvMap aktiv';
+        },
+        undefined,
+        (err) => {
+          console.warn('EnvMap Ladefehler:', err);
+          envStatus.textContent = 'Datei nicht gefunden (.envmap/environment.exr)';
+          pmrem.dispose();
+          self.checked = false;
+        }
+      );
+      return; // async – erst nach dem Laden weitermachen
+    }
+    scene.environment = envMapTexture;
+    scene.background  = envMapTexture;
+    envIntSlider.disabled = false;
+    updateEnvIntensity(parseFloat(envIntSlider.value));
+    envStatus.textContent = '? EnvMap aktiv';
+  } else {
+    scene.environment = null;
+    scene.background  = userBgColor.clone();
+    envIntSlider.disabled = true;
+    envStatus.textContent = 'aus';
+    updateEnvIntensity(0);
+  }
+});
+
+function updateEnvIntensity(val) {
+  scene.traverse((node) => {
+    if (node.isMesh && node.material) {
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      mats.forEach(m => { if (m.envMapIntensity !== undefined) m.envMapIntensity = val; });
+    }
+  });
+}
+
+envIntSlider.addEventListener('input', () => {
+  envIntVal.textContent = envIntSlider.value;
+  if (scene.environment) updateEnvIntensity(parseFloat(envIntSlider.value));
+});
+
+// ---------------------------------------------
+//  KANTEN (EDGES)  �  THREE.EdgesGeometry
+// ---------------------------------------------
+let edgeGroup = null;
+
+const edgeToggleEl    = document.getElementById('edgeToggle');
+const edgeColorEl     = document.getElementById('edgeColor');
+const edgeOpacityEl   = document.getElementById('edgeOpacity');
+const edgeOpacityVal  = document.getElementById('edgeOpacityVal');
+const edgeAngleEl     = document.getElementById('edgeAngle');
+const edgeAngleVal    = document.getElementById('edgeAngleVal');
+
+function buildEdges() {
+  // Altes Group entfernen und Geometrien freigeben
+  if (edgeGroup) {
+    scene.remove(edgeGroup);
+    edgeGroup.traverse(c => { if (c.geometry) c.geometry.dispose(); });
+    edgeGroup = null;
+  }
+  if (!edgeToggleEl.checked || collidableMeshes.length === 0) return;
+
+  const angle   = parseInt(edgeAngleEl.value);
+  const opacity = parseFloat(edgeOpacityEl.value);
+  const color   = edgeColorEl.value;
+
+  edgeGroup = new THREE.Group();
+
+  collidableMeshes.forEach(mesh => {
+    mesh.updateWorldMatrix(true, false);
+    const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, angle);
+    const edgeMat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(color),
+      transparent: opacity < 1,
+      opacity: opacity,
+      depthTest: true,
+    });
+    const lines = new THREE.LineSegments(edgeGeo, edgeMat);
+    // World-Matrix �bernehmen damit Kanten exakt auf dem Mesh liegen
+    lines.matrixAutoUpdate = false;
+    lines.matrix.copy(mesh.matrixWorld);
+    edgeGroup.add(lines);
+  });
+
+  scene.add(edgeGroup);
+}
+
+edgeToggleEl.addEventListener('change', buildEdges);
+
+edgeColorEl.addEventListener('input', () => {
+  if (!edgeGroup) return;
+  edgeGroup.traverse(c => {
+    if (c.isMesh || c.isLine) c.material.color.set(edgeColorEl.value);
+  });
+});
+
+edgeOpacityEl.addEventListener('input', () => {
+  edgeOpacityVal.textContent = edgeOpacityEl.value;
+  if (!edgeGroup) return;
+  const op = parseFloat(edgeOpacityEl.value);
+  edgeGroup.traverse(c => {
+    if (c.isMesh || c.isLine) {
+      c.material.opacity     = op;
+      c.material.transparent = op < 1;
+      c.material.needsUpdate = true;
+    }
+  });
+});
+
+edgeAngleEl.addEventListener('input', () => {
+  edgeAngleVal.textContent = edgeAngleEl.value + '°';
+  if (edgeToggleEl.checked) buildEdges();  // sofort neu berechnen
+});
+
+// ---------------------------------------------
+//  MATERIALFARBE TEST
+// ---------------------------------------------
+// ? Namen der Materialien die umgef�rbt werden sollen:
+const TESTMAT_NAMES = [
+  'material.007',
+  'Boden',        // ? hier den genauen Bodenmaterial-Namen eintragen
+                  //   (mit F einfrieren + auf Boden klicken um den Namen zu sehen)
+];
+
+const matTestBtn    = document.getElementById('matTestBtn');
+const matTestColor  = document.getElementById('matTestColor');
+const matTestStatus = document.getElementById('matTestStatus');
+// Originalfarben & Originalmaps sichern
+const matOriginals = new Map();
+let matTestActive = false;
+
+function getTestMaterials() {
+  const result = [];
+  scene.traverse((node) => {
+    if (!node.isMesh) return;
+    const mats = Array.isArray(node.material) ? node.material : [node.material];
+    mats.forEach(m => {
+      const n = (m.name || '').toLowerCase().trim();
+      if (TESTMAT_NAMES.some(t => t.toLowerCase().trim() === n)) {
+        if (!result.includes(m)) result.push(m);
+      }
+    });
+  });
+  return result;
+}
+
+const matTestEmissionBtn    = document.getElementById('matTestEmissionBtn');
+const matTestEmissionStatus = document.getElementById('matTestEmissionStatus');
+
+// Unlit-Modus: gespeicherte Original-Materialien pro Mesh
+const unlitOriginals = new Map();   // mesh ? { material, receiveShadow }
+let unlitActive = false;
+
+matTestEmissionBtn.addEventListener('click', () => {
+  if (!unlitActive) {
+    // -- Aktivieren: MeshBasicMaterial einsetzen ------------------
+    const meshes = [];
+    scene.traverse(node => {
+      if (!node.isMesh) return;
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      if (mats.some(m => TESTMAT_NAMES.some(t => t.toLowerCase().trim() === (m.name||'').toLowerCase().trim()))) {
+        meshes.push(node);
+      }
+    });
+    if (meshes.length === 0) {
+      matTestEmissionStatus.textContent = '? Keine Materialien gefunden!';
+      return;
+    }
+    meshes.forEach(node => {
+      const origMat = Array.isArray(node.material) ? node.material.slice() : node.material;
+      unlitOriginals.set(node, { material: origMat, receiveShadow: node.receiveShadow });
+
+      // Erstelle f�r jedes Material ein entsprechendes MeshBasicMaterial
+      const makeBasic = (m) => {
+        const basic = new THREE.MeshBasicMaterial({
+          name:        m.name,
+          color:       m.color ? m.color.clone() : new THREE.Color(0xffffff),
+          map:         m.map || null,
+          side:        m.side,
+          transparent: m.transparent,
+          opacity:     m.opacity,
+          alphaMap:    m.alphaMap || null,
+        });
+        return basic;
+      };
+
+      if (Array.isArray(node.material)) {
+        node.material = node.material.map(makeBasic);
+      } else {
+        node.material = makeBasic(node.material);
+      }
+      node.receiveShadow = false;
+    });
+    unlitActive = true;
+    matTestEmissionBtn.textContent       = 'Zurücksetzen';
+    matTestEmissionBtn.style.borderColor = '#c47a2b';
+    matTestEmissionBtn.style.color       = '#e0a855';
+    matTestEmissionStatus.textContent    = `? ${meshes.length} Mesh(es) unlit`;
+
+  } else {
+    // -- Deaktivieren: Original-Materialien zurück ----------------
+    unlitOriginals.forEach((orig, node) => {
+      // Dispose der temporären Basic-Materialien
+      const disposeM = m => { if (m && m.dispose) m.dispose(); };
+      if (Array.isArray(node.material)) node.material.forEach(disposeM);
+      else disposeM(node.material);
+
+      node.material      = orig.material;
+      node.receiveShadow = orig.receiveShadow;
+    });
+    unlitOriginals.clear();
+    unlitActive = false;
+    matTestEmissionBtn.textContent       = 'Aktivieren';
+    matTestEmissionBtn.style.borderColor = 'rgba(255,255,255,0.18)';
+    matTestEmissionBtn.style.color       = '#ccc';
+    matTestEmissionStatus.textContent    = 'aus';
+  }
+});
+
+
+
+
+
+matTestBtn.addEventListener('click', () => {
+  const mats = getTestMaterials();
+
+  if (!matTestActive) {
+    // -- Aktivieren: Originalwerte sichern + Testfarbe setzen
+    if (mats.length === 0) {
+      matTestStatus.textContent = '? Keine Materialien gefunden!';
+      return;
+    }
+    mats.forEach(m => {
+      matOriginals.set(m, {
+        color:   m.color ? m.color.clone() : null,
+        map:     m.map     || null,
+        emissiveMap: m.emissiveMap || null,
+      });
+      m.color.set(matTestColor.value);
+      m.map         = null;   // Textur tempor�r ausblenden
+      m.needsUpdate = true;
+    });
+    matTestActive = true;
+    matTestBtn.textContent  = 'Zurücksetzen';
+    matTestBtn.style.borderColor = '#c47a2b';
+    matTestBtn.style.color       = '#e0a855';
+    matTestStatus.textContent = `${mats.length} Material(ien) umgefärbt`;
+
+  } else {
+    // -- Deaktivieren: Originalwerte wiederherstellen
+    mats.forEach(m => {
+      const orig = matOriginals.get(m);
+      if (!orig) return;
+      if (orig.color) m.color.copy(orig.color);
+      m.map         = orig.map;
+      m.needsUpdate = true;
+    });
+    matOriginals.clear();
+    matTestActive = false;
+    matTestBtn.textContent  = 'Umfärben';
+    matTestBtn.style.borderColor = 'rgba(255,255,255,0.18)';
+    matTestBtn.style.color       = '#ccc';
+    matTestStatus.textContent = 'aus';
+  }
+});
+
+// Farbe live aktualisieren w�hrend Test aktiv
+matTestColor.addEventListener('input', () => {
+  if (!matTestActive) return;
+  getTestMaterials().forEach(m => {
+    m.color.set(matTestColor.value);
+    m.needsUpdate = true;
+  });
+});
+
+// ---------------------------------------------
+//  BILD-MAPPING  (Materialname ? Bildpfad)
+// ---------------------------------------------
+const bildMapping = {
+  'bild1':  './img/moses.jpg',
+  'bild2':  './img/david.jpg',
+  'bild3':  './img/salomo.jpg',
+  'bild4':  './img/zoraster.jpg',
+  'bild5':  './img/lykurg.jpg',
+  'bild6':  './img/solon.jpg',
+  'bild7':  './img/alexander_der_grosse.jpg',
+  'bild8':  './img/numa.jpg',
+  'bild9':  './img/saxonia.jpg',
+  'bild10': './img/konstantin_der_grosse.jpg',
+  'bild11': './img/gregor.jpg',
+  'bild12': './img/carl.jpg',
+  'bild13': './img/heinrich_und_sohn.jpg',
+  'bild14': './img/konrad2.jpg',
+  'bild15': './img/friedrich_barbarossa.jpg',
+  'bild16': './img/rudolph.jpg',
+  'bild17': './img/maximilian_und_albrecht.jpg',
+  'bild18': './img/die4staende.jpg ',
+  'bild19': './img/bauernstand.jpg',
+  'bild20': './img/buergerstand.jpg',
+  'bild21': './img/ritterstand.jpg',
+  'bild22': './img/geistlicherstand.jpg',
+};
+
+// Gibt { pfad, matName } zur�ck wenn das getroffene Material ein Bild hat
+function getBildForHit(mesh, hitMatIdx) {
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  const mat  = mats[hitMatIdx] || mats[0];
+  if (!mat) return null;
+  const name = (mat.name || '').toLowerCase().trim();
+  if (bildMapping[name]) return { pfad: bildMapping[name], matName: mat.name };
+  // Fallback: irgendein Material dieses Meshes hat ein Bild
+  for (const m of mats) {
+    const n = (m.name || '').toLowerCase().trim();
+    if (bildMapping[n]) return { pfad: bildMapping[n], matName: m.name };
+  }
+  return null;
+}
+
+// ---------------------------------------------
+//  CLICK-INFO OVERLAY
+// ---------------------------------------------
+const clickInfoEl       = document.getElementById('clickInfo');
+const clickInfoRows     = document.getElementById('clickInfoRows');
+const clickInfoClose    = document.getElementById('clickInfoClose');
+const clickInfoContinue = document.getElementById('clickInfoContinue');
+
+function closeClickInfo(andUnfreeze = true) {
+  clickInfoEl.style.display = 'none';
+  if (andUnfreeze) {
+    setFrozen(false);
+    // Kein PointerLock im viewLocked-Modus � Maus soll frei bleiben
+    if (!viewLocked && !isTouchDevice()) { /* PointerLock deaktiviert */ }
+  }
+  registerInteraction();
+}
+
+clickInfoClose   .addEventListener('click', () => closeClickInfo(true));
+clickInfoContinue.addEventListener('click', () => closeClickInfo(true));
+// Klick auf den dunklen Hintergrund (nicht die Box) = schlie�en
+clickInfoEl.addEventListener('click', (e) => {
+  if (e.target === clickInfoEl) closeClickInfo(true);
+});
+
+// ---------------------------------------------
+// AUTOPLAY-HIGHLIGHT (nach 20s Inaktivität)
+// ---------------------------------------------
+const hintEl = document.getElementById('hint');
+
+const autoHighlight = {
+  delayMs: 10000,
+  stepMs: 4200,    // Classic bewusst langsamer
+  holdMs: 2000,    // Optional: Dauer, die einzelne Fläche aktiv bleibt
+  mode: 'classic', // 'classic' | 'overlay' | 'outline'
+  meshes: [],
+  currentIndex: 0,
+  timerId: null,
+  timeoutId: null,
+  active: false,
+  activeMesh: null,
+  overlayMesh: null,
+  outlineLines: null,
+  animationStart: 0,
+};
+
+function showAutoHighlightHint(text) {
+  if (!hintEl) return;
+  hintEl.innerHTML = text;
+  hintEl.style.display = 'block';
+  setTimeout(() => {
+    if (hintEl) hintEl.style.display = 'none';
+  }, 3000);
+}
+
+function hideAutoHighlightHint() {
+  if (!hintEl) return;
+  hintEl.style.display = 'none';
+}
+
+function isMeshClickable(mesh) {
+  if (!mesh || !mesh.material) return false;
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  // Nur Materiale, die in bildMapping vorhanden sind, gelten als klickbar.
+  return mats.some(m => m && m.name && bildMapping[(m.name || '').toLowerCase().trim()]);
+}
+
+function makeAutoHighlightList() {
+  autoHighlight.meshes = collidableMeshes.filter(isMeshClickable);
+
+  if (autoHighlight.meshes.length === 0) {
+    autoHighlight.currentIndex = 0;
+    return;
+  }
+
+  // Feste Reihenfolge nach Materialnamen: bild1, bild2, bild3, ...
+  // So folgt nach Moses (bild1) zuverlässig David (bild2), Salomo (bild3), usw.
+  const getMeshBildOrder = (mesh) => {
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    let best = Number.POSITIVE_INFINITY;
+    mats.forEach((m) => {
+      const n = (m && m.name ? m.name : '').toLowerCase().trim();
+      const match = /^bild(\d+)$/.exec(n);
+      if (!match) return;
+      const idx = parseInt(match[1], 10);
+      if (!Number.isNaN(idx) && idx < best) best = idx;
+    });
+    return best;
+  };
+
+  autoHighlight.meshes.sort((a, b) => {
+    const ai = getMeshBildOrder(a);
+    const bi = getMeshBildOrder(b);
+    if (ai !== bi) return ai - bi;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  // Für Tests: wenn vorhanden immer mit Moses (Materialname 'bild1') starten.
+  const mosesIdx = autoHighlight.meshes.findIndex((mesh) => {
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    return mats.some((m) => (m && (m.name || '').toLowerCase().trim() === 'bild1'));
+  });
+
+  autoHighlight.currentIndex = mosesIdx >= 0 ? mosesIdx : 0;
+}
+
+function clearAutoHighlight() {
+  const mesh = autoHighlight.activeMesh;
+  if (autoHighlight.overlayMesh) {
+    scene.remove(autoHighlight.overlayMesh);
+    const om = autoHighlight.overlayMesh.material;
+    if (Array.isArray(om)) om.forEach(m => m && m.dispose && m.dispose());
+    else if (om && om.dispose) om.dispose();
+    autoHighlight.overlayMesh = null;
+  }
+
+  if (autoHighlight.outlineLines) {
+    scene.remove(autoHighlight.outlineLines);
+    autoHighlight.outlineLines.traverse((child) => {
+      if (child.geometry) child.geometry.dispose();
+      if (!child.material) return;
+      if (Array.isArray(child.material)) child.material.forEach(m => m && m.dispose && m.dispose());
+      else if (child.material.dispose) child.material.dispose();
+    });
+    autoHighlight.outlineLines = null;
+  }
+
+  if (!mesh || !mesh.userData || !mesh.userData.autoHighlightOriginals) {
+    autoHighlight.active = false;
+    autoHighlight.activeMesh = null;
+    return;
+  }
+
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  const saved = mesh.userData.autoHighlightOriginals;
+  mats.forEach((m, i) => {
+    if (!m || !saved[i]) return;
+    if (saved[i].color && m.color) m.color.copy(saved[i].color);
+    if (saved[i].opacity != null) m.opacity = saved[i].opacity;
+    if (saved[i].transparent != null) m.transparent = saved[i].transparent;
+    if (saved[i].emissive && m.emissive) m.emissive.copy(saved[i].emissive);
+    if (saved[i].emissiveIntensity != null && m.emissive) m.emissiveIntensity = saved[i].emissiveIntensity;
+    m.needsUpdate = true;
+  });
+  delete mesh.userData.autoHighlightOriginals;
+  autoHighlight.active = false;
+  autoHighlight.activeMesh = null;
+}
+
+function setAutoHighlight(mesh) {
+  if (!mesh) return;
+  clearAutoHighlight();
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  mesh.userData.autoHighlightOriginals = mats.map(m => ({
+    color: m.color ? m.color.clone() : null,
+    opacity: m.opacity,
+    transparent: m.transparent,
+    emissive: m.emissive ? m.emissive.clone() : null,
+    emissiveIntensity: m.emissiveIntensity,
+  }));
+
+  if (autoHighlight.mode === 'classic') {
+    const classicMaxColor = new THREE.Color(hlTestColor);
+    mats.forEach(m => {
+      if (!m) return;
+      if (m.color) m.color.copy(classicMaxColor);
+      if (m.emissive) {
+        m.emissive.copy(classicMaxColor);
+        m.emissiveIntensity = 1.6;
+      }
+      m.needsUpdate = true;
+    });
+  } else if (autoHighlight.mode === 'overlay') {
+    mesh.updateWorldMatrix(true, false);
+    const overlayMats = mats.map(() => new THREE.MeshBasicMaterial({
+      color: hlTestColor,
+      transparent: true,
+      opacity: 0.45,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }));
+    const overlayMat = overlayMats.length === 1 ? overlayMats[0] : overlayMats;
+    const overlay = new THREE.Mesh(mesh.geometry, overlayMat);
+    overlay.matrixAutoUpdate = false;
+    overlay.matrix.copy(mesh.matrixWorld);
+    // Leicht aufblasen, damit Overlay nicht im Original-Mesh verschwindet.
+    overlay.matrix.scale(new THREE.Vector3(1.003, 1.003, 1.003));
+    overlay.renderOrder = 999;
+    overlay.frustumCulled = false;
+    scene.add(overlay);
+    autoHighlight.overlayMesh = overlay;
+  } else {
+    mesh.updateWorldMatrix(true, false);
+    const geom = mesh.geometry;
+    if (!geom.boundingBox) geom.computeBoundingBox();
+    const gCenter = geom.boundingBox ? geom.boundingBox.getCenter(new THREE.Vector3()) : new THREE.Vector3();
+
+    const outlineGroup = new THREE.Group();
+    // Outset-Faktoren > 1.0: rote Linien bewusst nach vorn ziehen.
+    const insetScales = [1.010, 1.016, 1.022, 1.030, 1.038, 1.048, 1.060, 1.074];
+    const layerOpacity = [1.00, 0.95, 0.88, 0.80, 0.72, 0.62, 0.50, 0.38];
+
+    insetScales.forEach((s, i) => {
+      const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 1);
+      const pos = edgeGeo.getAttribute('position');
+      if (pos) {
+        for (let k = 0; k < pos.count; k++) {
+          const x = pos.getX(k), y = pos.getY(k), z = pos.getZ(k);
+          pos.setXYZ(
+            k,
+            gCenter.x + (x - gCenter.x) * s,  
+            gCenter.y + (y - gCenter.y) * s,
+            gCenter.z + (z - gCenter.z) * s
+          );
+        }
+        pos.needsUpdate = true;
+      }
+
+      const edgeMat = new THREE.LineDashedMaterial({
+        color: hlTestColor,
+        transparent: true,
+        opacity: layerOpacity[i],
+        // Linien bewusst vor anderen Outlines rendern (GLB-Outline darf nicht verdecken)
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        dashSize: 0.24,
+        gapSize: 0.04,
+        scale: 1,
+        linewidth: 2,
+        toneMapped: false,
+      });
+      const lines = new THREE.LineSegments(edgeGeo, edgeMat);
+      lines.computeLineDistances();
+      lines.matrixAutoUpdate = false;
+      lines.matrix.copy(mesh.matrixWorld);
+      lines.renderOrder = 1000000 + i;
+      lines.frustumCulled = false;
+      lines.userData.baseOpacity = layerOpacity[i];
+      outlineGroup.add(lines);
+    });
+
+    scene.add(outlineGroup);
+    autoHighlight.outlineLines = outlineGroup;
+  }
+
+  autoHighlight.active = true;
+  autoHighlight.activeMesh = mesh;
+  autoHighlight.animationStart = performance.now();
+}
+
+function runAutoHighlightStep() {
+  if (clickInfoEl.style.display === 'flex') return;
+  if (autoHighlight.meshes.length === 0) return;
+  autoHighlight.currentIndex = autoHighlight.currentIndex % autoHighlight.meshes.length;
+  const mesh = autoHighlight.meshes[autoHighlight.currentIndex];
+  if (mesh) {
+    setAutoHighlight(mesh);
+  }
+  autoHighlight.currentIndex = (autoHighlight.currentIndex + 1) % autoHighlight.meshes.length;
+}
+
+function stopAutoHighlightCycle() {
+  if (autoHighlight.timeoutId) { clearTimeout(autoHighlight.timeoutId); autoHighlight.timeoutId = null; }
+  if (autoHighlight.timerId) { clearInterval(autoHighlight.timerId); autoHighlight.timerId = null; }
+  clearAutoHighlight();
+}
+
+function updateAutoHighlightAnimation() {
+  const mesh = autoHighlight.activeMesh;
+  if (!mesh || !autoHighlight.active || !mesh.userData || !mesh.userData.autoHighlightOriginals) return;
+
+  const elapsed = (performance.now() - (autoHighlight.animationStart || 0)) % 1500;
+  const t = elapsed / 1500; // 0..1
+  const wave = 0.5 + 0.5 * Math.sin(t * Math.PI * 2);
+  const pulse = 0.5 + 0.5 * wave;       // 0.5..1
+  const glow = 0.85 + 0.55 * wave;      // glänzender Puls (mind. 0.85)
+  const highlightBase = new THREE.Color(hlTestColor);
+
+  if (autoHighlight.mode === 'overlay') {
+    const overlay = autoHighlight.overlayMesh;
+    if (!overlay) return;
+    const mats = Array.isArray(overlay.material) ? overlay.material : [overlay.material];
+    const peakColor = new THREE.Color('#fff0da');
+    mats.forEach(m => {
+      if (!m) return;
+      m.color.copy(highlightBase).lerp(peakColor, 0.45 + 0.55 * wave);
+      m.opacity = 0.26 + 0.54 * wave;
+      m.needsUpdate = true;
+    });
+    return;
+  }
+
+  if (autoHighlight.mode === 'outline') {
+    const outlineGroup = autoHighlight.outlineLines;
+    if (!outlineGroup) return;
+    const peakColor = new THREE.Color('#ff7c6f');
+    const total = Math.max(1, outlineGroup.children.length - 1);
+    outlineGroup.children.forEach((line, idx) => {
+      const m = line.material;
+      if (!m) return;
+      const layerWeight = 1 - (idx / total);
+      const phase = 0.35 + 0.65 * wave * layerWeight;
+      m.color.copy(highlightBase).lerp(peakColor, 0.25 + 0.55 * phase);
+      m.opacity = (line.userData.baseOpacity || 0.5) * (0.82 + 0.62 * phase);
+      m.scale = 0.95 + 2.8 * phase;
+      if ('dashOffset' in m) m.dashOffset = -elapsed * (0.0038 + idx * 0.0010);
+      m.needsUpdate = true;
+    });
+    return;
+  }
+
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  const saved = mesh.userData.autoHighlightOriginals;
+  const whiteHighlight = new THREE.Color('#fffdf8');
+  const classicMaxColor = new THREE.Color(hlTestColor);
+  // Genau ein Peak pro Objekt: Zyklusdauer an stepMs koppeln (weiß -> rot -> weiß).
+  const classicCycleMs = Math.max(2600, autoHighlight.stepMs || 4200);
+  const classicT = ((performance.now() - (autoHighlight.animationStart || 0)) % classicCycleMs) / classicCycleMs;
+  const classicPhase = 0.5 - 0.5 * Math.cos(classicT * Math.PI * 2); // 0 -> 1 -> 0
+  mats.forEach((m, i) => {
+    if (!m) return;
+    const original = saved[i] && saved[i].color ? saved[i].color : null;
+    if (m.color) {
+      m.color.copy(whiteHighlight).lerp(classicMaxColor, classicPhase);
+    }
+    if (m.emissive) {
+      m.emissive.copy(whiteHighlight).lerp(classicMaxColor, 0.2 + 0.8 * classicPhase);
+      m.emissiveIntensity = 0.4 + 2.6 * classicPhase;
+    }
+    if (m.transparent) {
+      m.opacity = 0.75 + 0.25 * classicPhase;
+    }
+    m.needsUpdate = true;
+  });
+}
+
+function startAutoHighlightCycle() {
+  if (autoHighlight.meshes.length === 0) return;
+  stopAutoHighlightCycle();
+  autoHighlight.timeoutId = null;
+  // Sofort sichtbar, sobald der Hinweis eingeblendet wird.
+  runAutoHighlightStep();
+  autoHighlight.timerId = setInterval(() => {
+    runAutoHighlightStep();
+  }, autoHighlight.stepMs);
+}
+
+function scheduleAutoHighlight() {
+  stopAutoHighlightCycle();
+  autoHighlight.timeoutId = setTimeout(() => {
+    showAutoHighlightHint('🔦 Klickbare Flächen leuchten jetzt im Wechsel auf');
+    startAutoHighlightCycle();
+  }, autoHighlight.delayMs);
+}
+
+function registerInteraction() {
+  hideAutoHighlightHint();
+  makeAutoHighlightList();
+  scheduleAutoHighlight();
+}
+
+function row(key, val, accent = false) {
+  return `<div class="infoRow">
+    <span class="infoKey">${key}</span>
+    <span class="infoVal${accent ? ' accent' : ''}">${val}</span>
+  </div>`;
+}
+
+function showClickInfo(ndc) {
+  const rc = new THREE.Raycaster();
+  rc.setFromCamera(ndc, camera);
+  const hits = rc.intersectObjects(collidableMeshes, false);
+  if (hits.length === 0) return;
+
+  const hit       = hits[0];
+  const mesh      = hit.object;
+  const hitMatIdx = (hit.face && hit.face.materialIndex != null) ? hit.face.materialIndex : 0;
+
+  // Kein Bild-Eintrag ? kein Overlay
+  const bildInfo = getBildForHit(mesh, hitMatIdx);
+  if (!bildInfo) return;
+
+  // Pr�fen ob die Datei wirklich auf dem Server existiert
+  fetch(bildInfo.pfad, { method: 'HEAD' })
+    .then(res => {
+      if (!res.ok) return;   // Datei nicht gefunden ? still ignorieren
+      clickInfoRows.innerHTML = `
+        <img src="${bildInfo.pfad}"
+             alt="${bildInfo.matName}"
+             style="width:100%;border-radius:6px;border:1px solid rgba(255,255,255,0.12);
+                    display:block;cursor:pointer;transition:opacity 0.2s;"
+             onclick="window.open('${bildInfo.pfad}','_blank')"
+             onmouseover="this.style.opacity='0.85'"
+             onmouseout="this.style.opacity='1'">
+        <div style="font-size:0.65rem;color:#444;margin-top:6px;text-align:right;">
+          Klick = Vollbild �ffnen
+        </div>`;
+      clickInfoEl.style.display = 'flex';
+    })
+    .catch(() => { /* Netzwerkfehler ? kein Overlay */ });
+}
+
+// ---------------------------------------------
+//  LOAD GLB MODEL
+// ---------------------------------------------
+const statusEl   = document.getElementById('loadStatus');
+const progressEl = document.getElementById('progressFill');
+const barEl      = document.getElementById('progressBar');
+const startBtn   = document.getElementById('startBtn');
+
+// Kollisions-Meshes und Bounding Box werden nach dem Laden bef�llt
+const collidableMeshes = [];
+let roomBox = null;           // THREE.Box3 des gesamten Modells
+
+const loader = new THREE.GLTFLoader();
+
+loader.load(
+  'propositionssaal.glb',
+
+  // -- onLoad ----------------------------------
+  (gltf) => {
+    const model = gltf.scene;
+
+    // Schl�sselw�rter f�r Boden & Decke � Node-Name oder Material-Name muss eines enthalten
+    const HIDE_KEYWORDS = ['floor', 'boden', 'ceeling', 'decke', 'ceil'];
+
+    // Alle Meshes von innen sichtbar machen + f�r Kollision sammeln
+    // Materialien werden direkt in MeshBasicMaterial konvertiert ? kein Lichteinfluss, kein EnvMap
+    model.traverse((node) => {
+      if (node.isMesh) {
+        // Boden & Decke ausblenden
+        const nodeName = (node.name || '').toLowerCase();
+        const matNames = (Array.isArray(node.material) ? node.material : [node.material])
+          .map(m => (m && m.name ? m.name.toLowerCase() : ''));
+        const isFloorOrCeiling = HIDE_KEYWORDS.some(kw =>
+          nodeName.includes(kw) || matNames.some(mn => mn.includes(kw))
+        );
+        if (isFloorOrCeiling) {
+          node.visible = false;
+          return; // Material-Konvertierung etc. �berspringen
+        }
+
+        node.castShadow    = false;
+        node.receiveShadow = false;
+        collidableMeshes.push(node);   // ? f�r Raycasting
+
+        if (node.material) {
+          const toBasic = (mat) => {
+            // Alle Materialien wei� � keine Graut�ne aus der GLB �bernehmen
+            const basic = new THREE.MeshBasicMaterial({
+              name:        mat.name,
+              color:       new THREE.Color(0xffffff),
+              map:         null,
+              side:        THREE.DoubleSide,
+              transparent: mat.transparent,
+              opacity:     mat.opacity,
+              alphaMap:    mat.alphaMap || null,
+            });
+            return basic;
+          };
+          if (Array.isArray(node.material)) {
+            node.material = node.material.map(toBasic);
+          } else {
+            node.material = toBasic(node.material);
+          }
+        }
+      }
+    });
+
+    scene.add(model);
+
+    // Autohighlight-Targets setzen (klickbare Flächen) und Timer starten
+    makeAutoHighlightList();
+    scheduleAutoHighlight();
+
+    // -- Kamera automatisch in den Raum stellen -
+    const box  = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    // Augenh�he ~40% der Raumh�he, Mitte horizontal
+    camera.position.set(
+      center.x,
+      box.min.y + size.y * 0.4,
+      center.z
+    );
+
+    // Near/Far an Modellgr��e anpassen
+    const maxDim = Math.max(size.x, size.y, size.z);
+    camera.far  = maxDim * 6;
+    camera.near = maxDim * 0.0005;
+    camera.updateProjectionMatrix();
+
+    // Bounding Box f�r Kollisions-Clamp speichern (mit kleinem Inset)
+    roomBox = box.clone();
+    const inset = maxDim * 0.04;   // 4 % Rand � ~40 cm Puffer zu den Au�enw�nden
+    roomBox.min.addScalar( inset);
+    roomBox.max.addScalar(-inset);
+
+    // Fog proportional zur Raumgr��e
+    scene.fog = new THREE.Fog(0xffffff, maxDim * 0.8, maxDim * 3);
+
+    statusEl.textContent  = 'Modell geladen … bereit!';
+    startBtn.disabled     = false;
+    startBtn.textContent  = 'Raum betreten';
+    barEl.style.display   = 'none';
+    lightToggleBtn.style.display = 'flex';  // Light-Button einblenden
+    document.getElementById('wallToggleBtn').style.display = 'flex';  // Wall-Button einblenden
+    document.getElementById('posBtn').style.display  = 'flex';  // Pos-Button einblenden
+    document.getElementById('tourBtn').style.display = 'flex';  // Tour-Button einblenden
+    document.getElementById('variantBtn').style.display = 'flex';  // Varianten-Button einblenden
+    document.getElementById('outlineDebugBtn').style.display = 'flex';  // Outline-Debug einblenden
+    document.getElementById('hlColorPicker').style.display = 'flex';  // HL-Farbwahl einblenden
+    // Kamera auf Ansicht 0 ausrichten
+    camera.position.set(VIEWS[0].x, VIEWS[0].y, VIEWS[0].z);
+    yaw   = VIEWS[0].yaw;
+    pitch = VIEWS[0].pitch;
+    targetPos   = new THREE.Vector3(VIEWS[0].x, VIEWS[0].y, VIEWS[0].z);
+    targetYaw   = yaw;
+    targetPitch = pitch;
+    targetFov   = VIEWS[0].fov;
+    currentFov  = VIEWS[0].fov;
+    setFov(VIEWS[0].fov);
+    euler.set(pitch, yaw, 0);
+    camera.quaternion.setFromEuler(euler);
+    // Navigations-Buttons einblenden
+    document.getElementById('viewNavL').style.display = 'flex';
+    document.getElementById('viewNavR').style.display = 'flex';
+    // Dots aufbauen
+    const dotsEl = document.getElementById('viewDots');
+    dotsEl.innerHTML = '';
+    VIEWS.forEach((v, i) => {
+      const d = document.createElement('div');
+      d.className = 'vdot' + (i === 0 ? ' active' : '');
+      if (v.name) d.title = v.name;
+      d.addEventListener('click', () => switchView(i));
+      dotsEl.appendChild(d);
+    });
+    // Wand-Label einblenden und initialisieren
+    if (wallLabelEl) {
+      wallLabelEl.style.display = 'block';
+      updateWallLabel();
+    }
+    dotsEl.style.display = 'flex';
+    // Zoom-Auswahl ausgeblendet (nur Fernglas-Modus)
+    document.getElementById('overlayDesc').innerHTML =
+      'Zoom-Modus wählen, dann Raum betreten.<br>Maus = Umschauen &nbsp;|&nbsp; ESC = zurück ins Menü';
+  },
+
+  // -- onProgress ------------------------------
+  (xhr) => {
+    barEl.style.display = 'block';
+    if (xhr.total > 0) {
+      const pct = Math.round((xhr.loaded / xhr.total) * 100);
+      progressEl.style.width = pct + '%';
+      statusEl.textContent = `Lade … ${pct}%  (${(xhr.loaded/1024/1024).toFixed(1)} MB)`;
+    } else {
+      statusEl.textContent = `Lade … ${(xhr.loaded/1024/1024).toFixed(1)} MB`;
+    }
+  },
+
+  // -- onError ---------------------------------
+  (err) => {
+    statusEl.textContent  = 'Fehler beim Laden!';
+    startBtn.textContent  = 'Fehler � Seite neu laden';
+    startBtn.disabled     = false;
+    console.error('GLB Ladefehler:', err);
+  }
+);
+
+// ---------------------------------------------
+//  LOAD OUTLINE GLB  (Propositionssaal_outline.glb)
+// ---------------------------------------------
+const outlineMat = new THREE.MeshBasicMaterial({
+  color: 0x000000,
+  side: THREE.DoubleSide,
+  transparent: false,
+  opacity: 1.0,
+});
+
+const outlineMaterials = [];  // alle geklonten Instanzen f�r Live-Update
+
+const outlineLoader = new THREE.GLTFLoader();
+outlineLoader.load(
+  'outlines.glb',
+
+  // -- onLoad ----------------------------------
+  (gltf) => {
+    const outlineModel = gltf.scene;
+    outlineModelRef = outlineModel;
+    outlineModel.traverse((node) => {
+      if (node.isMesh) {
+        // Alle Materialien durch MeshBasicMaterial ersetzen
+        let cloned;
+        if (Array.isArray(node.material)) {
+          node.material = node.material.map((srcMat) => {
+            const matName = ((srcMat && srcMat.name) ? srcMat.name : '').toLowerCase().trim();
+            const isRedHighlight = !!bildMapping[matName];
+            const m = outlineMat.clone();
+            m.depthTest = true;
+            m.depthWrite = true;
+            m.color.set(isRedHighlight ? 0xf52e27 : 0x000000);
+            if (isRedHighlight) redOutlineMaterials.push(m);
+            else blackOutlineMaterials.push(m);
+            outlineMaterials.push(m);
+            return m;
+          });
+        } else {
+          const srcMat = node.material;
+          const matName = ((srcMat && srcMat.name) ? srcMat.name : '').toLowerCase().trim();
+          const isRedHighlight = !!bildMapping[matName];
+          cloned = outlineMat.clone();
+          cloned.depthTest = true;
+          cloned.depthWrite = true;
+          cloned.color.set(isRedHighlight ? 0xf52e27 : 0x000000);
+          if (isRedHighlight) redOutlineMaterials.push(cloned);
+          else blackOutlineMaterials.push(cloned);
+          outlineMaterials.push(cloned);
+          node.material = cloned;
+        }
+        node.renderOrder = 100;
+        node.castShadow    = false;
+        node.receiveShadow = false;
+      }
+    });
+    applyBlackOutlineVisibility();
+    scene.add(outlineModel);
+    console.log('Outline-Modell geladen.');
+  },
+
+  // -- onProgress ------------------------------
+  undefined,
+
+  // -- onError ---------------------------------
+  (err) => {
+    console.warn('Outline GLB nicht geladen:', err);
+  }
+);
+
+// ---------------------------------------------
+//  LOAD WINDOW GLB  (window.glb)
+// ---------------------------------------------
+const windowLoader = new THREE.GLTFLoader();
+windowLoader.load(
+  'window.glb',
+
+  // -- onLoad ----------------------------------
+  (gltf) => {
+    const windowModel = gltf.scene;
+
+    // Glas-Material: erkennt Meshes deren Material- oder Mesh-Name
+    // Begriffe wie glass, glas, scheibe, glazing, pane enth�lt.
+    const glassKeywords = /glass|glas|scheibe|glazing|pane|verglas/i;
+
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color:            0xffffff,
+      metalness:        0.0,
+      roughness:        0.05,
+      transmission:     0.92,   // physikalische Lichtdurchl�ssigkeit
+      thickness:        0.008,  // Brechungs-Tiefe in Metern
+      ior:              1.52,   // Brechungsindex Glas
+      reflectivity:     0.5,
+      transparent:      true,
+      opacity:          1.0,
+      side:             THREE.DoubleSide,
+      envMapIntensity:  1.2,
+      depthWrite:       false,
+    });
+
+    windowModel.traverse((node) => {
+      if (!node.isMesh) return;
+
+      const nameMatch =
+        glassKeywords.test(node.name) ||
+        (node.material && !Array.isArray(node.material) && glassKeywords.test(node.material.name)) ||
+        (node.material && Array.isArray(node.material) && node.material.some(m => glassKeywords.test(m.name)));
+
+      if (nameMatch) {
+        // Glasscheibe
+        const g = glassMat.clone();
+        if (envMapTexture) g.envMap = envMapTexture;
+        node.material     = g;
+        node.renderOrder  = 1;     // nach opakem Geometry rendern
+        node.castShadow   = false;
+        node.receiveShadow = false;
+      } else {
+        // Rahmen / Holz / Stein � wei� wie der Rest des Raums
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        mats.forEach(mat => {
+          if (mat) {
+            mat.color.set(0xffffff);
+            mat.map = null;           // ggf. vorhandene Textur entfernen
+            mat.side = THREE.DoubleSide;
+            mat.needsUpdate = true;
+          }
+        });
+        node.castShadow    = true;
+        node.receiveShadow = true;
+      }
+    });
+
+    scene.add(windowModel);
+    console.log('Window-Modell geladen.');
+  },
+
+  // -- onProgress ------------------------------
+  undefined,
+
+  // -- onError ---------------------------------
+  (err) => {
+    console.warn('Window GLB nicht geladen:', err);
+  }
+);
+
+// ---------------------------------------------
+//  LOAD TEXT-ON-WALL GLBs (text_on_wall / text_on_wall_filled)
+// ---------------------------------------------
+let textWallModel = null;
+let textWallFilledModel = null;
+let activeWallModel = 'normal';
+
+function setWallModel(mode) {
+  activeWallModel = mode === 'filled' ? 'filled' : 'normal';
+  if (textWallModel) textWallModel.visible = activeWallModel === 'normal';
+  if (textWallFilledModel) textWallFilledModel.visible = activeWallModel === 'filled';
+
+  const wallLbl = document.getElementById('wallLabel');
+  wallLbl.textContent = activeWallModel === 'filled' ? 'Textwand: gefüllte Variante' : 'Textwand: Standardvariante';
+
+  const btn = document.getElementById('wallToggleBtn');
+  if (btn) btn.classList.toggle('active', activeWallModel === 'filled');
+}
+
+function toggleWallModel() {
+  setWallModel(activeWallModel === 'normal' ? 'filled' : 'normal');
+}
+
+function applyWallModelOnLoad() {
+  if (textWallModel || textWallFilledModel) setWallModel(activeWallModel);
+}
+
+const textWallLoader = new THREE.GLTFLoader();
+textWallLoader.load(
+  'text_on_wall.glb',
+
+  (gltf) => {
+    textWallModel = gltf.scene;
+    textWallModel.traverse((node) => {
+      if (!node.isMesh) return;
+      node.castShadow    = true;
+      node.receiveShadow = true;
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      mats.forEach(mat => {
+        if (mat) { mat.color.set(0x000000); mat.side = THREE.DoubleSide; mat.needsUpdate = true; }
+      });
+    });
+    textWallModel.visible = activeWallModel === 'normal';
+    scene.add(textWallModel);
+    applyWallModelOnLoad();
+  },
+
+  undefined,
+
+  (err) => {
+    console.warn('text_on_wall GLB nicht geladen:', err);
+  }
+);
+
+const textWallFilledLoader = new THREE.GLTFLoader();
+textWallFilledLoader.load(
+  'text_on_wall_filled.glb',
+
+  (gltf) => {
+    textWallFilledModel = gltf.scene;
+    textWallFilledModel.traverse((node) => {
+      if (!node.isMesh) return;
+      node.castShadow    = true;
+      node.receiveShadow = true;
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      mats.forEach(mat => {
+        if (mat) { mat.color.set(0x000000); mat.side = THREE.DoubleSide; mat.needsUpdate = true; }
+      });
+    });
+    textWallFilledModel.visible = activeWallModel === 'filled';
+    scene.add(textWallFilledModel);
+    applyWallModelOnLoad();
+  },
+
+  undefined,
+
+  (err) => {
+    console.warn('text_on_wall_filled GLB nicht geladen:', err);
+  }
+);
+
+setWallModel('filled');
+
+// ---------------------------------------------
+//  OUTLINE CONTROLS
+// ---------------------------------------------
+const outlineColorEl   = document.getElementById('outlineColor');
+const outlineOpacityEl = document.getElementById('outlineOpacity');
+const outlineOpacityValEl = document.getElementById('outlineOpacityVal');
+
+function applyOutlineSettings() {
+  const col = outlineColorEl.value;
+  const op  = parseFloat(outlineOpacityEl.value);
+
+  blackOutlineMaterials.forEach(m => {
+    m.color.set(col);
+    m.opacity    = op;
+    m.transparent = op < 1;
+    m.needsUpdate = true;
+  });
+
+  redOutlineMaterials.forEach(m => {
+    m.color.set(0xf52e27);
+    m.opacity    = Math.min(1, op);
+    m.transparent = m.opacity < 1;
+    m.needsUpdate = true;
+  });
+
+  applyBlackOutlineVisibility();
+}
+
+outlineColorEl.addEventListener('input', applyOutlineSettings);
+outlineOpacityEl.addEventListener('input', () => {
+  outlineOpacityValEl.textContent = parseFloat(outlineOpacityEl.value).toFixed(2);
+  applyOutlineSettings();
+});
+
+// ---------------------------------------------
+//  HIGHLIGHT-VARIANTEN (3 Modi)
+// ---------------------------------------------
+const variantBtn      = document.getElementById('variantBtn');
+const variantStatusEl = document.getElementById('variantStatus');
+let variantStatusTimer = null;
+let activeVariantIdx = 0;
+const hlColorPickerEl = document.getElementById('hlColorPicker');
+const hlAddBtn = document.getElementById('hlAddBtn');
+const hlCustomPanel = document.getElementById('hlCustomPanel');
+const hlAddConfirmBtn = document.getElementById('hlAddConfirmBtn');
+const hlCustomColorInput = document.getElementById('hlCustomColorInput');
+const hlHexInput = document.getElementById('hlHexInput');
+
+// Test-Farben für Highlights (via Swatch-Buttons)
+let hlTestColor = '#faa18f'; // Startwert = bisherige classic-Farbe
+let pendingCustomColor = null;
+
+function normalizeHexColor(hex) {
+  if (!hex) return '#FFFFFF';
+  const out = String(hex).trim().toUpperCase();
+  return out.startsWith('#') ? out : `#${out}`;
+}
+
+function parseHexColorInput(value) {
+  if (!value) return null;
+  let raw = String(value).trim().toUpperCase();
+  if (raw.startsWith('#')) raw = raw.slice(1);
+  if (/^[0-9A-F]{3}$/.test(raw)) {
+    raw = raw.split('').map(ch => ch + ch).join('');
+  }
+  if (!/^[0-9A-F]{6}$/.test(raw)) return null;
+  return `#${raw}`;
+}
+
+function setCustomPanelOpen(open) {
+  if (!hlCustomPanel) return;
+  hlCustomPanel.classList.toggle('open', open);
+}
+
+function createCustomHlSwatch(hex) {
+  const colorHex = normalizeHexColor(hex);
+  const existing = hlColorPickerEl.querySelector(`.hlSwatch[data-color="${colorHex}"]`);
+  if (existing) return existing;
+
+  const swatch = document.createElement('span');
+  swatch.className = 'hlSwatch';
+  swatch.dataset.color = colorHex;
+  swatch.style.background = colorHex;
+  swatch.title = `Custom ${colorHex}`;
+  hlColorPickerEl.insertBefore(swatch, hlAddBtn);
+  return swatch;
+}
+
+function updateHlAddConfirmState() {
+  if (!hlAddConfirmBtn) return;
+  const ready = !!pendingCustomColor;
+  hlAddConfirmBtn.disabled = !ready;
+  hlAddConfirmBtn.classList.toggle('ready', ready);
+  if (hlHexInput) {
+    hlHexInput.classList.toggle('invalid', !ready && hlHexInput.value.trim().length > 0);
+  }
+}
+
+// ---- Inline Canvas Color Picker ----
+const hlSVCanvas  = document.getElementById('hlSVCanvas');
+const hlHueCanvas = document.getElementById('hlHueCanvas');
+let pickerH = 0, pickerS = 0.8, pickerV = 1.0;
+
+function hsvToHex(h, s, v) {
+  const f = (n, k = (n + h / 60) % 6) => v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
+  const r = Math.round(f(5) * 255), g = Math.round(f(3) * 255), b = Math.round(f(1) * 255);
+  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function hexToHsv(hex) {
+  const r = parseInt(hex.slice(1,3),16)/255;
+  const g = parseInt(hex.slice(3,5),16)/255;
+  const b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+  let h = 0, s = max === 0 ? 0 : d / max, v = max;
+  if (d > 0) {
+    if (max === r)      h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else                h = 60 * ((r - g) / d + 4);
+    if (h < 0) h += 360;
+  }
+  return [h, s, v];
+}
+
+function drawPickerSV() {
+  if (!hlSVCanvas) return;
+  const ctx = hlSVCanvas.getContext('2d');
+  const W = hlSVCanvas.width, H = hlSVCanvas.height;
+  ctx.fillStyle = hsvToHex(pickerH, 1, 1);
+  ctx.fillRect(0, 0, W, H);
+  const wg = ctx.createLinearGradient(0, 0, W, 0);
+  wg.addColorStop(0, 'rgba(255,255,255,1)');
+  wg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = wg; ctx.fillRect(0, 0, W, H);
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, 'rgba(0,0,0,0)');
+  bg.addColorStop(1, 'rgba(0,0,0,1)');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const cx = pickerS * W, cy = (1 - pickerV) * H;
+  ctx.beginPath(); ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, 6.5, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; ctx.stroke();
+}
+
+function drawPickerHue() {
+  if (!hlHueCanvas) return;
+  const ctx = hlHueCanvas.getContext('2d');
+  const W = hlHueCanvas.width, H = hlHueCanvas.height;
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  for (let i = 0; i <= 360; i += 30) grad.addColorStop(i / 360, hsvToHex(i, 1, 1));
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+  const cx = (pickerH / 360) * W;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(Math.max(0, cx - 2), 0, 4, H);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(Math.max(0, cx - 3), 0, 1, H);
+  ctx.fillRect(Math.min(W - 1, cx + 2), 0, 1, H);
+}
+
+function redrawPicker() { drawPickerSV(); drawPickerHue(); }
+
+function applyPickerColor() {
+  const hex = hsvToHex(pickerH, pickerS, pickerV);
+  pendingCustomColor = hex;
+  if (hlCustomColorInput) hlCustomColorInput.value = hex;
+  if (hlHexInput) hlHexInput.value = hex;
+  updateHlAddConfirmState();
+  redrawPicker();
+}
+
+function initPickerFromHex(hex) {
+  const parsed = parseHexColorInput(hex);
+  if (!parsed) return;
+  [pickerH, pickerS, pickerV] = hexToHsv(parsed);
+  redrawPicker();
+}
+
+if (hlSVCanvas) {
+  let svDown = false;
+  const onSV = (e) => {
+    const rect = hlSVCanvas.getBoundingClientRect();
+    const scaleX = hlSVCanvas.width / rect.width;
+    const scaleY = hlSVCanvas.height / rect.height;
+    pickerS = Math.max(0, Math.min(1, (e.clientX - rect.left) * scaleX / hlSVCanvas.width));
+    pickerV = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) * scaleY / hlSVCanvas.height));
+    applyPickerColor();
+  };
+  hlSVCanvas.addEventListener('pointerdown', (e) => { svDown = true; hlSVCanvas.setPointerCapture(e.pointerId); onSV(e); });
+  hlSVCanvas.addEventListener('pointermove', (e) => { if (svDown) onSV(e); });
+  hlSVCanvas.addEventListener('pointerup',   () => { svDown = false; });
+}
+
+if (hlHueCanvas) {
+  let hueDown = false;
+  const onHue = (e) => {
+    const rect = hlHueCanvas.getBoundingClientRect();
+    const scaleX = hlHueCanvas.width / rect.width;
+    pickerH = Math.max(0, Math.min(360, ((e.clientX - rect.left) * scaleX / hlHueCanvas.width) * 360));
+    applyPickerColor();
+  };
+  hlHueCanvas.addEventListener('pointerdown', (e) => { hueDown = true; hlHueCanvas.setPointerCapture(e.pointerId); onHue(e); });
+  hlHueCanvas.addEventListener('pointermove', (e) => { if (hueDown) onHue(e); });
+  hlHueCanvas.addEventListener('pointerup',   () => { hueDown = false; });
+}
+// ---- Ende Canvas Color Picker ----
+
+function setHlTestColor(hex) {
+  const colorHex = normalizeHexColor(hex);
+  hlTestColor = colorHex;
+  if (hlCustomColorInput) hlCustomColorInput.value = colorHex;
+
+  document.querySelectorAll('.hlSwatch').forEach(el => {
+    el.classList.toggle('active', el.dataset.color === colorHex);
+  });
+  // Laufendes Highlight sofort mit neuer Farbe neu aufbauen
+  if (autoHighlight.active && autoHighlight.activeMesh) {
+    setAutoHighlight(autoHighlight.activeMesh);
+  }
+}
+
+if (hlColorPickerEl) {
+  hlColorPickerEl.addEventListener('click', (e) => {
+    const swatch = e.target.closest('.hlSwatch');
+    if (!swatch) return;
+    setHlTestColor(swatch.dataset.color);
+  });
+}
+
+if (hlAddBtn && hlCustomColorInput) {
+  hlAddBtn.addEventListener('click', () => {
+    setCustomPanelOpen(true);
+    pendingCustomColor = null;
+    const startColor = normalizeHexColor(hlTestColor);
+    hlCustomColorInput.value = startColor;
+    if (hlHexInput) hlHexInput.value = startColor;
+    initPickerFromHex(startColor);
+    updateHlAddConfirmState();
+  });
+
+  const onColorPick = (hex) => {
+    const parsed = parseHexColorInput(hex);
+    pendingCustomColor = parsed;
+    if (parsed && hlCustomColorInput) hlCustomColorInput.value = parsed;
+    if (parsed && hlHexInput) hlHexInput.value = parsed;
+    updateHlAddConfirmState();
+  };
+
+  hlCustomColorInput.addEventListener('input', () => onColorPick(hlCustomColorInput.value));
+  hlCustomColorInput.addEventListener('change', () => onColorPick(hlCustomColorInput.value));
+
+  if (hlHexInput) {
+    hlHexInput.addEventListener('input', () => {
+      onColorPick(hlHexInput.value);
+      const p = parseHexColorInput(hlHexInput.value);
+      if (p) { [pickerH, pickerS, pickerV] = hexToHsv(p); redrawPicker(); }
+    });
+    hlHexInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && pendingCustomColor && hlAddConfirmBtn && !hlAddConfirmBtn.disabled) {
+        hlAddConfirmBtn.click();
+      }
+    });
+  }
+}
+
+if (hlAddConfirmBtn) {
+  hlAddConfirmBtn.addEventListener('click', () => {
+    if (!pendingCustomColor) return;
+    const swatch = createCustomHlSwatch(pendingCustomColor);
+    setHlTestColor(swatch.dataset.color);
+    pendingCustomColor = null;
+    setCustomPanelOpen(false);
+    updateHlAddConfirmState();
+  });
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (!hlCustomPanel || !hlColorPickerEl) return;
+  if (!hlCustomPanel.classList.contains('open')) return;
+  if (hlColorPickerEl.contains(e.target)) return;
+  pendingCustomColor = null;
+  setCustomPanelOpen(false);
+  updateHlAddConfirmState();
+});
+
+updateHlAddConfirmState();
+
+const HIGHLIGHT_VARIANTS = [
+  {
+    title: 'Highlight 1/3 - Klassisch',
+    mode: 'classic',
+    stepMs: 4200,
+  },
+  {
+    title: 'Highlight 2/3 - Bloom Overlay',
+    mode: 'overlay',
+    stepMs: 2600,
+  },
+  {
+    title: 'Highlight 3/3 - Animierte Outline',
+    mode: 'outline',
+    stepMs: 2600,
+  },
+];
+
+function showVariantStatus(text) {
+  if (!variantStatusEl) return;
+  variantStatusEl.textContent = text;
+  variantStatusEl.style.display = 'block';
+  if (variantStatusTimer) clearTimeout(variantStatusTimer);
+  variantStatusTimer = setTimeout(() => {
+    variantStatusEl.style.display = 'none';
+  }, 2600);
+}
+
+function applyVariantPreset(idx) {
+  if (!HIGHLIGHT_VARIANTS.length) return;
+  const safeIdx = ((idx % HIGHLIGHT_VARIANTS.length) + HIGHLIGHT_VARIANTS.length) % HIGHLIGHT_VARIANTS.length;
+  activeVariantIdx = safeIdx;
+  const variant = HIGHLIGHT_VARIANTS[safeIdx];
+
+  autoHighlight.mode = variant.mode;
+  autoHighlight.stepMs = variant.stepMs || 2600;
+  stopAutoHighlightCycle();
+  makeAutoHighlightList();
+  startAutoHighlightCycle();
+
+  if (variantBtn) {
+    variantBtn.textContent = `HL ${safeIdx + 1}/${HIGHLIGHT_VARIANTS.length}`;
+    variantBtn.classList.add('active');
+    variantBtn.title = `${variant.title} (Taste V)`;
+  }
+
+  showVariantStatus(variant.title);
+  console.log('[Highlight-Variante] Aktiv:', variant.title);
+}
+
+function cycleVariantPreset(step = 1) {
+  applyVariantPreset(activeVariantIdx + step);
+}
+
+if (variantBtn) {
+  variantBtn.addEventListener('click', () => cycleVariantPreset(1));
+}
+
+// ---------------------------------------------
+//  ZOOM-MODUS  ('move' | 'fov')
+// ---------------------------------------------
+let zoomMode = 'fov';
+const FOV_DEFAULT = 60;
+const FOV_MIN     = 20;
+const FOV_MAX     = 100;
+
+// -- FOV-Slider -------------------------------
+const fovSlider   = document.getElementById('fovSlider');
+const fovValBadge = document.getElementById('fovVal');
+const fovResetBtn = document.getElementById('fovResetBtn');
+
+function setFov(val) {
+  camera.fov = val;
+  camera.updateProjectionMatrix();
+  fovSlider.value        = val;
+  fovValBadge.textContent = val + '�';
+}
+
+fovSlider.addEventListener('input', () => {
+  setFov(parseInt(fovSlider.value));
+});
+
+fovResetBtn.addEventListener('click', () => {
+  setFov(FOV_DEFAULT);
+});
+
+function setZoomMode(mode) {
+  zoomMode = mode;
+  document.getElementById('zpickMove').classList.toggle('active', mode === 'move');
+  document.getElementById('zpickFov') .classList.toggle('active', mode === 'fov');
+  if (mode === 'move') {
+    setFov(FOV_DEFAULT);
+  }
+}
+
+// Z-Taste: Modus wechseln ohne ESC dr�cken zu m�ssen
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyF') {
+    if (frozen) {
+      setFrozen(false);
+    } else {
+      setFrozen(true);
+    }
+  }
+  if (e.code === 'KeyL') lightToggleBtn.click();
+  if (e.code === 'KeyW') toggleWallModel();
+  if (e.code === 'KeyV') cycleVariantPreset(1);
+});
+
+// Zoom-Toggle-Button existiert nicht mehr – wird über Overlay gesteuert
+
+// ---------------------------------------------
+//  FIXE ANSICHTEN
+// ---------------------------------------------
+const VIEWS = [
+  // Ansicht 1: noch mehr nach rechts und weiter zurück
+  { x: -1.20, y: 2.488, z: -6.05, yaw:  46.6 * Math.PI/180, pitch:  9.0 * Math.PI/180, name: 'Ansicht 1', fov: 60 },
+  { x: -1.249, y: 2.387, z: -5.725, yaw: -40.4 * Math.PI/180, pitch: 11.0 * Math.PI/180, name: 'Ansicht 2', fov: 60 },
+  { x: -0.955, y: 2.260, z:  4.344, yaw:-142.3 * Math.PI/180, pitch: 11.2 * Math.PI/180, name: 'Ansicht 3', fov: 60 },
+  { x:  1.253, y: 2.549, z:  5.504, yaw:-215.5 * Math.PI/180, pitch:  7.3 * Math.PI/180, name: 'Ansicht 4', fov: 60 },
+];
+let currentViewIdx = 0;
+let targetYaw   = VIEWS[0].yaw;
+let targetPitch = VIEWS[0].pitch;
+let targetFov   = VIEWS[0].fov;
+let currentFov  = VIEWS[0].fov;
+const VIEW_LERP_SPEED = 0.065;  // Übergangsgeschwindigkeit
+let viewLocked    = false;      // Maus-Rotation gesperrt (legacy-Flag)
+let viewAnimating = false;      // Kamera fährt gerade zu einer Ansicht
+let targetPos;                  // wird nach THREE-Init gesetzt
+
+function lerpAngle(cur, tgt, t) {
+  let d = tgt - cur;
+  while (d >  Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return cur + d * t;
+}
+
+const wallLabelEl = document.getElementById('wallLabel');
+
+function updateWallLabel() {
+  const v = VIEWS[currentViewIdx];
+  if (wallLabelEl && v.name) {
+    wallLabelEl.textContent = v.name;
+  }
+}
+
+function switchView(idx, dir) {
+  currentViewIdx = ((idx % VIEWS.length) + VIEWS.length) % VIEWS.length;
+  const v = VIEWS[currentViewIdx];
+  let newYaw = v.yaw;
+
+  // dir: sicherstellen dass die Rotation in die richtige Richtung dreht
+  if (dir !== undefined) {
+    let d = newYaw - yaw;
+    while (d >  Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    if (dir > 0 && d > 0) newYaw -= Math.PI * 2;
+    if (dir < 0 && d < 0) newYaw += Math.PI * 2;
+  }
+
+  targetYaw     = newYaw;
+  targetPitch   = v.pitch;
+  targetFov     = v.fov;
+  if (targetPos) targetPos.set(v.x, v.y, v.z);
+  viewAnimating = true;
+
+  document.querySelectorAll('.vdot').forEach((d, i) =>
+    d.classList.toggle('active', i === currentViewIdx)
+  );
+  updateWallLabel();
+}
+
+// ---------------------------------------------
+//  KAMERA-STEUERUNG (Maus + Touch)
+// ---------------------------------------------
+let pointerLocked = false;
+let yaw   = VIEWS[0].yaw;
+let pitch = VIEWS[0].pitch;
+const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+function applyLook(dx, dy) {
+  return;  // Maus-/Touch-Rotation deaktiviert – nur fixe Ansichten
+  yaw   -= dx * 0.0018;
+  pitch -= dy * 0.0018;
+  pitch  = Math.max(-1.4, Math.min(1.4, pitch));
+  euler.set(pitch, yaw, 0);
+  camera.quaternion.setFromEuler(euler);
+}
+
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = document.pointerLockElement === renderer.domElement;
+  document.getElementById('crosshair').style.display = 'none';
+});
+
+// Maus-Blick (PointerLock)
+document.addEventListener('mousemove', (e) => {
+  if (!pointerLocked || frozen) return;
+  applyLook(e.movementX, e.movementY);
+});
+
+// ---------------------------------------------
+//  SCROLL-ZOOM (Maus-Rad)
+// ---------------------------------------------
+const zoomDir   = new THREE.Vector3();
+const raycaster = new THREE.Raycaster();
+const MIN_WALL_DIST = 0.42;  // 42 cm Puffer zu jeder Wand
+
+// Hilfsvektoren f�r Multi-Richtungs-Kollision
+const _right = new THREE.Vector3();
+const _up    = new THREE.Vector3(0, 1, 0);
+
+// Pr�ft ob eine Position zu nah an irgendeiner Wand ist
+// Castet Strahlen in 8 horizontale Richtungen + 1 nach vorne/hinten
+function tooCloseToWall(pos) {
+  if (collidableMeshes.length === 0) return false;
+
+  // Kamerarichtung und Rechtsvector berechnen
+  camera.getWorldDirection(zoomDir);
+  zoomDir.y = 0; zoomDir.normalize();
+  _right.crossVectors(zoomDir, _up).normalize();
+
+  // 8 Horizontalrichtungen + leicht diagonal
+  const dirs = [
+    zoomDir.clone(),
+    zoomDir.clone().negate(),
+    _right.clone(),
+    _right.clone().negate(),
+    zoomDir.clone().add(_right.clone()).normalize(),
+    zoomDir.clone().sub(_right.clone()).normalize(),
+    zoomDir.clone().negate().add(_right.clone()).normalize(),
+    zoomDir.clone().negate().sub(_right.clone()).normalize(),
+  ];
+
+  for (const dir of dirs) {
+    raycaster.set(pos, dir);
+    const hits = raycaster.intersectObjects(collidableMeshes, false);
+    if (hits.length > 0 && hits[0].distance < MIN_WALL_DIST) return true;
+  }
+  return false;
+}
+
+function doMoveZoom(delta) {
+  if (collidableMeshes.length === 0) return;
+  camera.getWorldDirection(zoomDir);
+  const newPos = camera.position.clone().addScaledVector(zoomDir, delta);
+  if (roomBox) newPos.clamp(roomBox.min, roomBox.max);
+  // Neue Position nur akzeptieren wenn sie nicht in einer Wand steckt
+  if (!tooCloseToWall(newPos)) {
+    camera.position.copy(newPos);
+  }
+}
+
+function doFovZoom(delta) {
+  // Rauszoomen max. bis Standardansicht (FOV_DEFAULT)
+  setFov(Math.max(FOV_MIN, Math.min(FOV_DEFAULT, camera.fov + delta)));
+}
+
+// Zoom zur Maus-Position: Kamerarichtung verschiebt sich so, dass der
+// Punkt unter dem Cursor beim Zoomen an seiner Stelle bleibt.
+const mouseNDC = { x: 0, y: 0 };
+window.addEventListener('mousemove', (e) => {
+  mouseNDC.x =  (e.clientX / window.innerWidth)  * 2 - 1;
+  mouseNDC.y = -(e.clientY / window.innerHeight) * 2 + 1;
+});
+
+function doFovZoomToMouse(deltaDeg, ndcX, ndcY) {
+  const fovOld = camera.fov;
+  const fovNew = Math.max(FOV_MIN, Math.min(FOV_DEFAULT, fovOld + deltaDeg));
+  if (fovNew === fovOld) return;
+
+  // Winkel des Cursors zur Bildmitte � vor und nach FOV-�nderung
+  const tanHalfOld = Math.tan(fovOld * Math.PI / 360);
+  const tanHalfNew = Math.tan(fovNew * Math.PI / 360);
+
+  const angleXOld = Math.atan(ndcX * tanHalfOld * camera.aspect);
+  const angleXNew = Math.atan(ndcX * tanHalfNew * camera.aspect);
+  const angleYOld = Math.atan(ndcY * tanHalfOld);
+  const angleYNew = Math.atan(ndcY * tanHalfNew);
+
+  // Kamera exakt so drehen, dass der Punkt unter dem Cursor stabil bleibt
+  // Vorzeichen angeglichen (Touch-/Wheel-Empfinden): Rechts bleibt rechts.
+  yaw   -= angleXOld - angleXNew;
+  pitch  = Math.max(-1.4, Math.min(1.4, pitch + (angleYOld - angleYNew)));
+  euler.set(pitch, yaw, 0);
+  camera.quaternion.setFromEuler(euler);
+  // targetYaw/Pitch synchron halten � kein Sprung beim n�chsten switchView
+  targetYaw   = yaw;
+  targetPitch = pitch;
+
+  setFov(fovNew);
+}
+
+window.addEventListener('wheel', (e) => {
+  // UI-Panels: scrollen erlauben, kein 3D-Zoom
+  if (e.target.closest('#lightPanel, #clickInfo, #overlay')) return;
+  e.preventDefault();
+  if (tourActive) return;  // Kein Zoom während Kamerafahrt
+  doFovZoomToMouse(e.deltaY * 0.05, mouseNDC.x, mouseNDC.y);
+}, { passive: false });
+
+// ---------------------------------------------
+//  TOUCH-STEUERUNG � optimiert f�r Touch-Monitor
+//  1 Finger  = Drehen
+//  2 Finger  = Pinch-Zoom
+// ---------------------------------------------
+let lastTouches = null;
+let lastPinchDist = 0;
+let touchActive   = false;   // Touch l�uft gerade
+let touchTapStart = null;    // einfache Tap-Erkennung
+let touchMoved    = false;
+
+function getTouches(e) {
+  return Array.from(e.touches).map(t => ({ x: t.clientX, y: t.clientY }));
+}
+function pinchDist(touches) {
+  const dx = touches[0].x - touches[1].x;
+  const dy = touches[0].y - touches[1].y;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+renderer.domElement.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  lastTouches   = getTouches(e);
+  touchActive   = true;
+  if (e.touches.length === 2) {
+    lastPinchDist = pinchDist(lastTouches);
+    touchTapStart = null;
+  } else if (e.touches.length === 1) {
+    touchTapStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+    touchMoved = false;
+  } else {
+    touchTapStart = null;
+    touchMoved = false;
+  }
+
+  // Auf Touch-Monitoren kein PointerLock n�tig � UI ausblenden
+  if (touchActive && !pointerLocked && !startBtn.disabled) {
+    document.getElementById('overlay').style.display   = 'none';
+    document.getElementById('crosshair').style.display = 'block';
+    document.getElementById('hint').style.display      = 'block';
+    document.getElementById('touchHint').style.display = 'block';
+  }
+}, { passive: false });
+
+renderer.domElement.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!lastTouches) return;
+  const cur = getTouches(e);
+
+  if (e.touches.length === 1 && lastTouches.length === 1) {
+    const dx = cur[0].x - lastTouches[0].x;
+    const dy = cur[0].y - lastTouches[0].y;
+    if (touchTapStart && Math.hypot(dx, dy) > 10) {
+      touchMoved = true;
+    }
+    // -- 1 Finger: Kamera drehen --
+    applyLook(dx / 0.0018 * 0.004, dy / 0.0018 * 0.004);
+
+  } else if (e.touches.length === 2 && lastTouches.length >= 2) {
+    // -- 2 Finger: Pinch-Zoom --
+    const dist = pinchDist(cur);
+    const diff = lastPinchDist - dist;   // positiv = weiter auseinander = reinzoomen
+    // Scroll / Touch-Zoom an der Mittelpunktsposition, nicht immer Zentrum.
+    const focusX = (cur[0].x + cur[1].x) / 2;
+    const focusY = (cur[0].y + cur[1].y) / 2;
+    const ndcX = (focusX / window.innerWidth) * 2 - 1;
+    const ndcY = -(focusY / window.innerHeight) * 2 + 1;
+    doFovZoomToMouse(diff * 0.15, ndcX, ndcY);
+    lastPinchDist = dist;
+  }
+
+  lastTouches = cur;
+}, { passive: false });
+
+renderer.domElement.addEventListener('touchend', (e) => {
+  // -- Swipe-Erkennung (1 Finger) ---------------
+  if (e.changedTouches.length === 1 && lastTouches === null) {
+    // lastTouches wurde bereits auf null gesetzt? Fallback
+  }
+  if (e.changedTouches.length >= 1 && swipeTouchStart) {
+    const dx = e.changedTouches[0].clientX - swipeTouchStart.x;
+    const dy = e.changedTouches[0].clientY - swipeTouchStart.y;
+    if (Math.abs(dx) > SWIPE_MIN_DIST && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      wasDrag = true;
+      switchView(currentViewIdx + (dx < 0 ? 1 : -1), dx < 0 ? +1 : -1);
+    }
+    swipeTouchStart = null;
+  }
+
+  // -- Tap auf der Wand: Bild-Info anzeigen (wenn keine Swipe-Bewegung) --
+  if (e.changedTouches.length === 1 && !wasDrag && touchTapStart && !touchMoved) {
+    const touch = e.changedTouches[0];
+    const ndc = new THREE.Vector2(
+      (touch.clientX / window.innerWidth) * 2 - 1,
+     -(touch.clientY / window.innerHeight) * 2 + 1
+    );
+    showClickInfo(ndc);
+  }
+
+  lastTouches = getTouches(e);
+  if (e.touches.length === 0) { touchActive = false; lastTouches = null; }
+  if (e.touches.length === 2) lastPinchDist = pinchDist(lastTouches);
+  touchTapStart = null;
+  touchMoved = false;
+  wasDrag = false;  // Touch-Sequenz abgeschlossen – für nächsten Tap zurücksetzen
+}, { passive: true });
+
+// ---------------------------------------------
+//  SWIPE / DRAG � Ansicht wechseln
+//  Maus: Links/Rechts-Drag auf Canvas
+//  Touch: wird oben im touchend behandelt
+// ---------------------------------------------
+const SWIPE_MIN_DIST = 60;   // px
+let swipeMouseStart  = null;
+let swipeTouchStart  = null;
+
+// Touch-Start merken
+renderer.domElement.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    swipeTouchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  } else {
+    swipeTouchStart = null;  // Pinch ? kein Swipe
+  }
+}, { passive: true });
+
+// Maus-Start merken
+renderer.domElement.addEventListener('mousedown', (e) => {
+  swipeMouseStart = { x: e.clientX, y: e.clientY };
+});
+
+// Maus-Ende: Swipe auswerten
+renderer.domElement.addEventListener('mouseup', (e) => {
+  if (!swipeMouseStart) return;
+  const dx = e.clientX - swipeMouseStart.x;
+  const dy = e.clientY - swipeMouseStart.y;
+  swipeMouseStart = null;
+  // Nur ausl�sen wenn es ein echter horizontaler Drag war (kein simpler Klick)
+  if (Math.abs(dx) > SWIPE_MIN_DIST && Math.abs(dx) > Math.abs(dy) * 1.5) {
+    wasDrag = true;
+    switchView(currentViewIdx + (dx < 0 ? 1 : -1), dx < 0 ? +1 : -1);
+  }
+});
+
+// Start-Button � auf Touch-Monitor: kein PointerLock n�tig
+const isTouchDevice = () => window.matchMedia('(pointer: coarse)').matches;
+
+startBtn.addEventListener('click', () => {
+  if (startBtn.disabled) return;
+  document.getElementById('overlay').style.display = 'none';
+  if (isTouchDevice() || viewLocked) {
+    // Kein PointerLock n�tig: Maus bleibt frei f�r Klicks auf W�nde
+    document.getElementById('hint').style.display = 'block';
+    if (isTouchDevice()) document.getElementById('touchHint').style.display = 'block';
+  } else {
+    // PointerLock deaktiviert
+  }
+});
+
+// Klick auf Canvas – kein PointerLock mehr nötig
+renderer.domElement.addEventListener('click', () => {
+  // absichtlich leer
+});
+
+// ---------------------------------------------
+//  RESIZE
+// ---------------------------------------------
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------------------------------------------
+//  DEBUG � BLICKRICHTUNG  (Taste: G)
+//  Gibt yaw (horizontal), pitch (vertikal) und
+//  den normalisierten Richtungsvektor in die
+//  Konsole aus. Aufruf manuell per Taste G.
+// ---------------------------------------------
+(function setupDirectionDebug() {
+  const _dir = new THREE.Vector3();
+
+  function logDirection() {
+    camera.getWorldDirection(_dir);
+    const yawDeg   = (yaw   * 180 / Math.PI).toFixed(2);
+    const pitchDeg = (pitch * 180 / Math.PI).toFixed(2);
+    console.log(
+      '%c[Blickrichtung]',
+      'color:#c47a2b;font-weight:bold',
+      `\n  yaw   = ${yawDeg}�   (horizontal)\n` +
+      `  pitch = ${pitchDeg}�  (vertikal)\n` +
+      `  dir.x = ${_dir.x.toFixed(4)}\n` +
+      `  dir.y = ${_dir.y.toFixed(4)}\n` +
+      `  dir.z = ${_dir.z.toFixed(4)}`
+    );
+  }
+
+  // Taste G: einmalige Ausgabe
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyG') logDirection();
+  });
+})();
+
+// ---------------------------------------------
+//  POSITION + BLICKRICHTUNG BUTTON
+// ---------------------------------------------
+const _posBtnDir = new THREE.Vector3();
+function logPosDir() {
+  camera.getWorldDirection(_posBtnDir);
+  const p = camera.position;
+  const yawDeg   = (yaw   * 180 / Math.PI).toFixed(1);
+  const pitchDeg = (pitch * 180 / Math.PI).toFixed(1);
+  console.log(
+    '%c[📍 Kamera-Position & Blickrichtung]',
+    'color:#7cf;font-weight:bold',
+    `\n  Position:   x=${p.x.toFixed(3)},  y=${p.y.toFixed(3)},  z=${p.z.toFixed(3)}` +
+    `\n  Yaw:        ${yawDeg}°  (horizontal)` +
+    `\n  Pitch:      ${pitchDeg}°  (vertikal)` +
+    `\n  Richtung:   x=${_posBtnDir.x.toFixed(4)},  y=${_posBtnDir.y.toFixed(4)},  z=${_posBtnDir.z.toFixed(4)}`
+  );
+}
+document.getElementById('posBtn').addEventListener('click', logPosDir);
+
+// ---------------------------------------------
+//  KAMERAFAHRT (Tour)
+// ---------------------------------------------
+const TOUR_WAYPOINTS = [
+  { x: -2.172, y: 2.488, z: -5.684, yaw:  46.6 * Math.PI/180, pitch:  9.0 * Math.PI/180 },
+  { x: -1.249, y: 2.387, z: -5.725, yaw: -40.4 * Math.PI/180, pitch: 11.0 * Math.PI/180 },
+  { x: -0.955, y: 2.260, z:  4.344, yaw:-142.3 * Math.PI/180, pitch: 11.2 * Math.PI/180 },
+  { x:  1.253, y: 2.549, z:  5.504, yaw:-215.5 * Math.PI/180, pitch:  7.3 * Math.PI/180 },
+];
+const TOUR_FLY_MS   = 3500;  // Flugdauer pro Segment in ms
+const TOUR_PAUSE_MS = 2000;  // Pause an jeder Position in ms
+
+let tourActive     = false;
+let tourPhase      = 'idle';  // 'fly' | 'pause'
+let tourFromIdx    = 0;
+let tourToIdx      = 1;
+let tourPhaseStart = 0;
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3) / 2;
+}
+
+function angleLerpTour(a, b, t) {
+  let d = b - a;
+  while (d >  Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+const tourBtn      = document.getElementById('tourBtn');
+const tourProgress = document.getElementById('tourProgress');
+
+function updateTourProgress() {
+  tourProgress.textContent = `● ${tourFromIdx + 1} → ${tourToIdx + 1}  (von 4)`;
+}
+
+function startTour() {
+  frozen = false;
+  document.getElementById('freezeHint').style.display = 'none';
+
+  tourActive     = true;
+  tourPhase      = 'fly';
+  tourFromIdx    = 0;
+  tourToIdx      = 1;
+  tourPhaseStart = performance.now();
+
+  // Kamera sofort auf Startposition setzen
+  const wp0 = TOUR_WAYPOINTS[0];
+  camera.position.set(wp0.x, wp0.y, wp0.z);
+  yaw   = wp0.yaw;
+  pitch = wp0.pitch;
+  euler.set(pitch, yaw, 0);
+  camera.quaternion.setFromEuler(euler);
+
+  tourBtn.innerHTML = '&#x23F9;';
+  tourBtn.title     = 'Kamerafahrt stoppen';
+  tourBtn.classList.add('active');
+  tourProgress.style.display = 'block';
+  updateTourProgress();
+}
+
+function stopTour() {
+  tourActive = false;
+  tourPhase  = 'idle';
+  tourBtn.innerHTML = '&#127909;';
+  tourBtn.title     = 'Kamerafahrt starten (alle 4 Positionen)';
+  tourBtn.classList.remove('active');
+  tourProgress.style.display = 'none';
+}
+
+function updateTour(now) {
+  if (!tourActive) return;
+  const elapsed = now - tourPhaseStart;
+
+  if (tourPhase === 'fly') {
+    const t  = Math.min(elapsed / TOUR_FLY_MS, 1.0);
+    const te = easeInOutCubic(t);
+    const from = TOUR_WAYPOINTS[tourFromIdx];
+    const to   = TOUR_WAYPOINTS[tourToIdx];
+
+    camera.position.set(
+      from.x + (to.x - from.x) * te,
+      from.y + (to.y - from.y) * te,
+      from.z + (to.z - from.z) * te
+    );
+    yaw   = angleLerpTour(from.yaw,   to.yaw,   te);
+    pitch = angleLerpTour(from.pitch, to.pitch, te);
+    euler.set(pitch, yaw, 0);
+    camera.quaternion.setFromEuler(euler);
+
+    if (t >= 1.0) {
+      // Exakt an Zielposition einrasten
+      camera.position.set(to.x, to.y, to.z);
+      yaw   = to.yaw;
+      pitch = to.pitch;
+      euler.set(pitch, yaw, 0);
+      camera.quaternion.setFromEuler(euler);
+      tourPhase      = 'pause';
+      tourPhaseStart = now;
+    }
+  } else if (tourPhase === 'pause') {
+    if (elapsed >= TOUR_PAUSE_MS) {
+      tourFromIdx    = tourToIdx;
+      tourToIdx      = (tourToIdx + 1) % TOUR_WAYPOINTS.length;
+      tourPhase      = 'fly';
+      tourPhaseStart = now;
+      updateTourProgress();
+    }
+  }
+}
+
+tourBtn.addEventListener('click', () => {
+  if (tourActive) stopTour();
+  else            startTour();
+});
+
+// Pfeil-Buttons
+document.getElementById('viewNavL').addEventListener('click', () => switchView(currentViewIdx - 1, -1));
+document.getElementById('viewNavR').addEventListener('click', () => switchView(currentViewIdx + 1, +1));
+
+// Tastatur-Pfeile
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'ArrowLeft')  switchView(currentViewIdx - 1, -1);
+  if (e.code === 'ArrowRight') switchView(currentViewIdx + 1, +1);
+});
+
+// ---------------------------------------------
+//  RENDER LOOP
+// ---------------------------------------------
+function animate() {
+  requestAnimationFrame(animate);
+
+  // Kamerafahrt (Tour-Button)
+  updateTour(performance.now());
+
+  // Sanfte Kamera-Animation zu Ziel-Ansicht (Pfeil-Buttons / Dots)
+  if (viewAnimating && !tourActive && targetPos) {
+    camera.position.lerp(targetPos, VIEW_LERP_SPEED);
+    yaw   = lerpAngle(yaw,   targetYaw,   VIEW_LERP_SPEED);
+    pitch = lerpAngle(pitch, targetPitch, VIEW_LERP_SPEED);
+    euler.set(pitch, yaw, 0);
+    camera.quaternion.setFromEuler(euler);
+    if (Math.abs(currentFov - targetFov) > 0.01) {
+      currentFov += (targetFov - currentFov) * VIEW_LERP_SPEED;
+      camera.fov = currentFov;
+      camera.updateProjectionMatrix();
+    }
+    // Einrasten wenn nah genug
+    const posDist = camera.position.distanceTo(targetPos);
+    let yd = targetYaw - yaw; while (yd > Math.PI) yd -= Math.PI*2; while (yd < -Math.PI) yd += Math.PI*2;
+    let pd = targetPitch - pitch;
+    if (posDist < 0.008 && Math.abs(yd) < 0.001 && Math.abs(pd) < 0.001) {
+      camera.position.copy(targetPos);
+      yaw   = targetYaw;
+      pitch = targetPitch;
+      currentFov = targetFov;
+      camera.fov = currentFov;
+      camera.updateProjectionMatrix();
+      viewAnimating = false;
+    }
+  }
+
+  // Auto-Highlight-Puls-Animation pro Frame
+  updateAutoHighlightAnimation();
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
